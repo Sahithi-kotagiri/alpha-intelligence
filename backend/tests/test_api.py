@@ -284,3 +284,11 @@ def test_alert_preferences_suppress_alerts(client):
     out = client.post("/api/monitoring/run").json()
     assert out["events"] >= 1
     assert not [a for a in client.get("/api/alerts").json()["alerts"] if a["ticker"] == "TSTA"]
+
+
+def test_migrations_create_missing_data_directory(tmp_path):
+    from backend.database.session import run_migrations
+
+    db = tmp_path / "does" / "not" / "exist" / "x.db"
+    run_migrations(f"sqlite:///{db}")
+    assert db.exists()

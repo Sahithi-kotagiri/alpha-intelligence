@@ -71,7 +71,12 @@ def run_migrations(url: str | None = None) -> None:
     from alembic import command
     from alembic.config import Config
 
+    url = url or get_settings().database_url
+    if url.startswith("sqlite"):
+        path = url.split("///", 1)[-1]
+        if path and path != ":memory:":
+            Path(path).parent.mkdir(parents=True, exist_ok=True)  # fresh checkout: data/ does not exist yet
     cfg = Config()
     cfg.set_main_option("script_location", str(MIGRATIONS_DIR))
-    cfg.set_main_option("sqlalchemy.url", url or get_settings().database_url)
+    cfg.set_main_option("sqlalchemy.url", url)
     command.upgrade(cfg, "head")
