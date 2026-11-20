@@ -50,8 +50,8 @@ def test_baseline_comparison_with_fake_llm(client):
 
 
 def test_universe_screen_and_screener(client):
-    from backend.database.session import get_sessionmaker
     from backend.database.models import ScreenRun
+    from backend.database.session import get_sessionmaker
     from backend.services.universe import run_screen
 
     client.get("/api/universe")
