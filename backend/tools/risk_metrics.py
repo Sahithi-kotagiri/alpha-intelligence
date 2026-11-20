@@ -51,7 +51,7 @@ def gap_stats(df: pd.DataFrame, threshold: float = 0.05, sessions: int = 504) ->
     d = df.iloc[-sessions:]
     gaps = (d["Open"] / d["Close"].shift(1) - 1).dropna()
     big = gaps[gaps.abs() > threshold]
-    return {"gaps_over_threshold": int(len(big)), "threshold": threshold, "sessions": int(len(gaps)),
+    return {"gaps_over_threshold": len(big), "threshold": threshold, "sessions": len(gaps),
             "largest_gap": float(gaps.loc[gaps.abs().idxmax()]) if len(gaps) else None,
             "largest_gap_date": gaps.abs().idxmax().date().isoformat() if len(gaps) else None}
 

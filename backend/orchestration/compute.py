@@ -21,7 +21,12 @@ from backend.tools.financial_metrics import FundamentalCalculator, latest_metric
 from backend.tools.risk_metrics import compute_risk
 from backend.tools.scenario_analysis import eps_scenarios, sales_scenarios
 from backend.tools.technical_indicators import chart_series, compute_technicals
-from backend.tools.valuation import compute_valuation, consensus_growth, historical_valuation, market_snapshot
+from backend.tools.valuation import (
+    compute_valuation,
+    consensus_growth,
+    historical_valuation,
+    market_snapshot,
+)
 
 log = logging.getLogger(__name__)
 
@@ -106,7 +111,7 @@ def run_compute(providers, res: IngestionResult, dq: DataQualityReport, params: 
         stats_by_level[lvl] = peer_stats({t: all_infos[t] for t in grp.with_data})
     stats = stats_by_level.get(pg.level, {})
     pg.with_data = levels[pg.level].with_data if pg.level in levels else []
-    emit("peers", "completed", f"Peer data: " + ", ".join(f"{lvl.replace('_', '-')} {len(g.with_data)}/{len(g.tickers)}"
+    emit("peers", "completed", "Peer data: " + ", ".join(f"{lvl.replace('_', '-')} {len(g.with_data)}/{len(g.tickers)}"
                                                          for lvl, g in levels.items()))
     ni = fd.ttm.get("net_income").value if fd and fd.ttm.get("net_income") else None
     eq = fd.latest_instant.get("equity").value if fd and fd.latest_instant.get("equity") else None

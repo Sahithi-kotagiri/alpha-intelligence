@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from backend.analysis.classification import BusinessProfile
 from backend.analysis.config_loader import thresholds
-from backend.analysis.peers import PeerGroup, PeerStats, oriented_percentile, vendor_value  # noqa: F401
+from backend.analysis.peers import PeerGroup, PeerStats, oriented_percentile, vendor_value
 from backend.data.normalisation import FinancialData
 from backend.tools.financial_metrics import altman_z, latest_metric
 from backend.tools.types import Metric, fmt_value

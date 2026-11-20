@@ -141,7 +141,7 @@ def candidate_impact(weights: dict[str, float], cash_w: float, candidate: str, c
                   pd.Series({t: w for t, w in weights.items() if t in rets.columns})).sum(axis=1)
             out["candidate_corr_to_portfolio"] = float(rets[candidate].corr(pr)) if len(pr) > 60 else None
     out["risk_contribution_after"] = risk_contributions(after, rets)
-    out["lookback_sessions"] = int(len(rets))
+    out["lookback_sessions"] = len(rets)
     return out
 
 
@@ -150,4 +150,4 @@ def correlation_matrix(rets: pd.DataFrame) -> dict[str, Any]:
         return {"tickers": [], "matrix": []}
     c = rets.corr()
     return {"tickers": list(c.columns), "matrix": [[round(float(x), 3) for x in row] for row in c.values],
-            "lookback_sessions": int(len(rets)), "frequency": "daily"}
+            "lookback_sessions": len(rets), "frequency": "daily"}

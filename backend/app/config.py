@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     llm_provider: str = Field(default="none", description="none | anthropic")
     anthropic_api_key: SecretStr | None = None
     # Pinned explicitly so an ANTHROPIC_BASE_URL meant for other tools is never picked up.
-    anthropic_base_url: str = "https://api.anthropic.com"
+    claude_api_base_url: str = "https://api.anthropic.com"  # env CLAUDE_API_BASE_URL (deliberately not ANTHROPIC_BASE_URL)
     llm_model: str = "claude-opus-5-5"
     llm_effort: str = "high"
     llm_max_tokens: int = 16000

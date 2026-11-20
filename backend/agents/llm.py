@@ -58,7 +58,7 @@ class AnthropicClient:
         self._anthropic = anthropic
         kwargs: dict[str, Any] = {
             "api_key": settings.anthropic_api_key.get_secret_value(),
-            "base_url": settings.anthropic_base_url,  # pinned: never inherit ANTHROPIC_BASE_URL meant for other tools
+            "base_url": settings.claude_api_base_url,  # pinned: never inherit ANTHROPIC_BASE_URL meant for other tools
             "timeout": settings.llm_timeout_seconds,
             "max_retries": 2,
         }

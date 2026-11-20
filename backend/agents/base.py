@@ -25,7 +25,12 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from backend.agents.guardrails import claim_texts, invalid_citations, strip_invalid, unverified_numbers
+from backend.agents.guardrails import (
+    claim_texts,
+    invalid_citations,
+    strip_invalid,
+    unverified_numbers,
+)
 from backend.agents.llm import LLMClient, LLMError
 from backend.analysis.assessment import Assessment
 from backend.analysis.evidence import EvidenceItem, EvidencePack, render_for_prompt
