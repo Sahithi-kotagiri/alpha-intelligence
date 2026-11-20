@@ -65,6 +65,11 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings)
     run_migrations()
+    if settings.auth_mode == "local":
+        from backend.app.security import ensure_local_user
+
+        with get_sessionmaker()() as db:
+            ensure_local_user(db)
     app.state.providers = get_providers()
     app.state.llm_factory = lambda: build_llm(settings)
     app.state.voice = build_voice(settings)

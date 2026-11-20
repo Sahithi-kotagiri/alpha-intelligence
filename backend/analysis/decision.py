@@ -190,7 +190,15 @@ def entry_price(rec: str, price: float | None, price_date: Any, tech_entry: dict
         out["methods"].append(f"Technical support zone ${tz['low']:,.2f}–${tz['high']:,.2f} ({tz['touches']} touches)")
     lo = hi = None
     if tz and fv:
-        lo, hi = tz["low"], min(tz["high"], max(fv)) if max(fv) > tz["low"] else tz["high"]
+        if max(fv) < tz["low"] * 0.95 or min(fv) > tz["high"] * 1.05:
+            out.update(available=False, divergent=True,
+                       text=f"No reliable entry range: technical support (${tz['low']:,.2f}–${tz['high']:,.2f}) and peer-relative "
+                            f"valuation anchors (${min(fv):,.2f}–${max(fv):,.2f}) disagree materially. Treat both as reference "
+                            "levels, not entry prices.")
+            return out
+        lo, hi = max(tz["low"], min(fv)), min(tz["high"], max(fv))
+        if lo > hi:
+            lo, hi = tz["low"], tz["high"]
     elif tz:
         lo, hi = tz["low"], tz["high"]
     elif fv:

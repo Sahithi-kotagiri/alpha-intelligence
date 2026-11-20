@@ -276,6 +276,9 @@ class FakeMarket:
                          published_at=(TODAY - timedelta(days=2)).isoformat() + "T11:00:00Z", url="https://example.invalid/n2",
                          summary="Duplicate coverage.", related_tickers=[t], source_name="FIXTURE news")]
 
+    def get_splits(self, t):
+        return pd.Series(dtype=float)
+
     def get_calendar(self, t):
         return {"Earnings Date": [TODAY + timedelta(days=40)], "Earnings Average": 1.0}
 

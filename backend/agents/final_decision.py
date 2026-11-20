@@ -79,7 +79,7 @@ class FinalDecisionAgent:
         rscore = ctx.scores["risk"].score if ctx.scores.get("risk") else None
         summary = (f"{ctx.company_name} ({ctx.ticker}) — {rec} at {conf:.0%} confidence (confidence reflects evidence sufficiency, "
                    f"not probability of profit). Business quality {q if q is not None else 'n/a'}/10; valuation "
-                   f"{v if v is not None else 'n/a'}/10 versus {ctx.peer.get('level')} peers ({ctx.peer.get('name')}); technical "
+                   f"{v if v is not None else 'n/a'}/10 versus {str(ctx.peer.get('level')).replace('_', '-')} peers ({ctx.peer.get('name')}); technical "
                    f"{committee['scores'].get('technical')}/10; risk rating {risk_rating(rscore)}. "
                    f"Decision basis: {committee['policy_trace'][-1] if committee['policy_trace'] else ''} "
                    + (f"Strongest objection: {risks[0]['text']} " if risks else "")

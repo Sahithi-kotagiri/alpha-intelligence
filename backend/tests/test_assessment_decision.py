@@ -137,7 +137,7 @@ def test_missing_scores_cannot_buy():
 def test_entry_price_requires_evidence():
     out = D.entry_price("Wait", 100.0, "2026-01-01", {"justified": False}, [], None, None, None, None)
     assert not out["available"] and "No reliable entry price" in out["text"]
-    out2 = D.entry_price("Wait", 100.0, "2026-01-01", {"justified": True, "low": 90, "high": 95, "touches": 3}, [], 5, 17,
+    out2 = D.entry_price("Wait", 100.0, "2026-01-01", {"justified": True, "low": 90, "high": 95, "touches": 3}, [], 5, 18.6,
                          None, None)
     assert out2["available"] and out2["low"] <= out2["high"]
 
@@ -149,3 +149,8 @@ def test_allocation_requires_portfolio_inputs():
                                       "impact": {"vol_before": 0.15, "candidate_corr_to_portfolio": 0.5}}, 0.3)
     assert a["available"] and 0 < a["high"] <= 0.05
     assert D.allocation("Reject", 0.9, {"available": True, "risk_tolerance": "moderate"}, 0.3)["high"] == 0
+
+
+def test_entry_price_divergent_methods_not_quoted():
+    out = D.entry_price("Wait", 350.0, "2026-01-01", {"justified": True, "low": 344, "high": 345, "touches": 2}, [], 9, 23, 10.6, 9.6)
+    assert not out["available"] and out["divergent"] and "disagree" in out["text"]

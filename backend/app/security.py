@@ -64,9 +64,14 @@ def issue_token(db: Session, user: User, settings: Settings) -> str:
 def ensure_local_user(db: Session) -> User:
     u = db.get(User, LOCAL_USER_ID)
     if u is None:
-        u = User(id=LOCAL_USER_ID, email="local@localhost", display_name="Local user")
-        db.add(u)
-        db.commit()
+        from sqlalchemy.exc import IntegrityError
+
+        try:
+            db.add(User(id=LOCAL_USER_ID, email="local@localhost", display_name="Local user"))
+            db.commit()
+        except IntegrityError:  # created concurrently by another request
+            db.rollback()
+        u = db.get(User, LOCAL_USER_ID)
     return u
 
 

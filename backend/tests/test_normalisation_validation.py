@@ -142,3 +142,20 @@ def test_yahoo_symbol_mapping():
 
     assert to_yahoo_symbol("brk.b") == "BRK-B"
     _ = pd  # keep import used
+
+
+def test_split_adjustment_of_pre_split_filings():
+    from backend.data.ingestion import adjust_for_splits
+    from backend.data.normalisation import FinancialData
+    from backend.data.provenance import DataPoint
+
+    fd = FinancialData(ticker="X", currency="USD", fye_month=12)
+    fd.annual["diluted_eps"] = [
+        DataPoint(id="a", field="diluted_eps", label="EPS", value=12.0, unit="USD/share", period_type="annual",
+                  period_end=date(2017, 12, 31), filing_date=date(2018, 2, 1), source_name="SEC", source_type="regulatory_filing"),
+        DataPoint(id="b", field="diluted_eps", label="EPS", value=4.0, unit="USD/share", period_type="annual",
+                  period_end=date(2021, 12, 31), filing_date=date(2022, 2, 1), source_name="SEC", source_type="regulatory_filing")]
+    px = pd.DataFrame({"Close": [1.0, 1.0], "Stock Splits": [0.0, 4.0]}, index=pd.to_datetime(["2020-08-28", "2020-08-31"]))
+    assert adjust_for_splits(fd, px) == 1
+    assert fd.annual["diluted_eps"][0].value == 3.0 and fd.annual["diluted_eps"][0].original_value == 12.0
+    assert fd.annual["diluted_eps"][1].value == 4.0
