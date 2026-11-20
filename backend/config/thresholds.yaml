@@ -1,0 +1,113 @@
+# Threshold methodology configuration. Every analysis records this version.
+# Methodology: docs/METHODOLOGY.md §4. Change values here, bump the version, re-run tests.
+version: "thresholds-2026.11-v1"
+
+peer_group:
+  # Peers = S&P 500 constituents in the same GICS sub-industry; fall back to sector, then universe.
+  min_sub_industry_peers: 5      # minimum members for a sub-industry group to be considered
+  min_sector_peers: 8
+  # per-metric minimum number of peers WITH VALID DATA at each level; otherwise fall back a level
+  min_valid_by_level: {sub_industry: 5, sector: 8, universe: 20}
+  max_on_demand_fetch: 90        # max peers fetched live when no universe screen snapshot exists
+  # Values outside these bounds are excluded from peer distributions (data errors / not meaningful).
+  valid_ranges:
+    trailing_pe: [0.01, 500]
+    forward_pe: [0.01, 300]
+    peg_forward: [0.01, 20]
+    ev_to_ebitda: [0.01, 300]
+    price_to_sales: [0.01, 200]
+    price_to_book: [0.01, 200]
+    price_to_fcf: [0.01, 500]
+    debt_to_equity: [0.0, 20]
+    ev_to_sales: [0.01, 200]
+    fcf_margin_ttm: [-5, 5]
+
+# Peer-relative bands. Percentile is "share of peers the company is better than",
+# after orienting each metric so that higher = better.
+percentile_bands:
+  favourable_at_or_above: 0.60
+  unfavourable_below: 0.30
+
+# Business types change which metrics apply and how they are read.
+business_types:
+  financial_sub_industries: ["Diversified Banks", "Regional Banks", "Investment Banking & Brokerage",
+    "Asset Management & Custody Banks", "Consumer Finance", "Life & Health Insurance",
+    "Multi-line Insurance", "Property & Casualty Insurance", "Reinsurance", "Insurance Brokers",
+    "Financial Exchanges & Data", "Transaction & Payment Processing Services", "Multi-Sector Holdings",
+    "Diversified Financial Services", "Mortgage REITs"]
+  # balance-sheet-funded lenders/insurers: leverage and working-capital ratios are not meaningful
+  balance_sheet_financials: ["Diversified Banks", "Regional Banks", "Investment Banking & Brokerage",
+    "Consumer Finance", "Life & Health Insurance", "Multi-line Insurance", "Property & Casualty Insurance",
+    "Reinsurance", "Asset Management & Custody Banks", "Multi-Sector Holdings", "Mortgage REITs"]
+  reit_sector: "Real Estate"
+  utility_sector: "Utilities"
+  cyclical_sectors: ["Energy", "Materials"]
+  cyclical_sub_industries: ["Automobile Manufacturers", "Homebuilding", "Steel", "Passenger Airlines",
+    "Construction Machinery & Heavy Transportation Equipment", "Semiconductors",
+    "Semiconductor Materials & Equipment", "Hotels, Resorts & Cruise Lines", "Casinos & Gaming",
+    "Agricultural & Farm Machinery", "Copper", "Gold", "Fertilizers & Agricultural Chemicals",
+    "Commodity Chemicals", "Oil & Gas Exploration & Production", "Oil & Gas Refining & Marketing"]
+  growth_revenue_cagr_3y: 0.15     # ≥15% 3y revenue CAGR => growth company
+  high_growth_revenue_cagr_3y: 0.30
+
+not_applicable:
+  financial: [debt_to_equity, current_ratio, quick_ratio, cash_ratio, ev_to_ebitda, ev_to_sales, gross_margin_ttm,
+              interest_coverage, net_debt_to_ebitda, fcf_margin_ttm, price_to_fcf, fcf_yield, altman_z,
+              capex_intensity_ttm, dso, dio]
+  reit: [altman_z, payout_ratio_ttm]
+  utility: [altman_z]
+
+# Absolute guardrails: widely used heuristics, applied *in addition to* peer-relative bands.
+# Each has a documented source/rationale (see METHODOLOGY §4.3).
+absolute:
+  peg_forward:     {favourable_max: 1.0, unfavourable_min: 2.0, source: "Lynch (1989) PEG≈1 fair-value heuristic"}
+  peg_trailing:    {favourable_max: 1.0, unfavourable_min: 2.0, source: "Lynch (1989) PEG≈1 fair-value heuristic"}
+  interest_coverage: {favourable_min: 8.0, unfavourable_max: 3.0, source: "rating-agency coverage bands (investment grade ≈ >3–4x)"}
+  piotroski_f_score: {favourable_min: 7, unfavourable_max: 3, source: "Piotroski (2000) high/low F-score portfolios"}
+  altman_z:        {favourable_min: 2.99, unfavourable_max: 1.81, source: "Altman (1968) safe/distress zones"}
+  revenue_yoy_annual: {favourable_min: 0.10, unfavourable_max: 0.0, source: "vs long-run nominal GDP / S&P 500 aggregate sales growth (~4–6%/yr): ≥10% ≈ double the market, <0% shrinking"}
+  revenue_cagr_3y:   {favourable_min: 0.10, unfavourable_max: 0.0, source: "vs long-run nominal GDP / S&P 500 aggregate sales growth (~4–6%/yr)"}
+  revenue_cagr_5y:   {favourable_min: 0.10, unfavourable_max: 0.0, source: "vs long-run nominal GDP / S&P 500 aggregate sales growth (~4–6%/yr)"}
+  diluted_eps_yoy_annual: {favourable_min: 0.10, unfavourable_max: 0.0, source: "vs long-run S&P 500 EPS growth (~6–7%/yr)"}
+  diluted_eps_cagr_3y:    {favourable_min: 0.10, unfavourable_max: 0.0, source: "vs long-run S&P 500 EPS growth (~6–7%/yr)"}
+  roic_annual: {favourable_min: 0.15, unfavourable_max: 0.08, source: "absolute heuristic bands (McKinsey 'Valuation': median US non-financial ROIC ≈10–15%); NOT a company-specific cost-of-capital comparison"}
+  fcf_conversion_annual: {favourable_min: 0.9, unfavourable_max: 0.6, source: "quality-of-earnings heuristic: free cash flow ≈ net income for cash-backed earnings"}
+  accruals_ratio_annual: {favourable_max: 0.0, unfavourable_min: 0.10, source: "Sloan (1996) accrual anomaly"}
+  share_change_1y: {favourable_max: 0.0, unfavourable_min: 0.03, source: "net dilution >3%/yr erodes per-share value"}
+  current_ratio:   {unfavourable_max: 0.8, source: "liquidity warning below 0.8x"}
+  debt_to_equity:
+    default: {favourable_max: 1.0, unfavourable_min: 2.0}
+    utility: {favourable_max: 1.5, unfavourable_min: 3.0}
+    reit:    {favourable_max: 1.2, unfavourable_min: 2.5}
+    source: "capital-structure norms by business model; regulated utilities and REITs carry structurally higher leverage"
+  net_debt_to_ebitda:
+    default: {favourable_max: 1.5, unfavourable_min: 3.5}
+    utility: {favourable_max: 4.0, unfavourable_min: 6.0}
+    reit:    {favourable_max: 5.0, unfavourable_min: 7.5}
+    source: "leveraged-finance and rating-agency leverage bands"
+  # A high D/E is treated as acceptable when debt is demonstrably serviceable:
+  leverage_serviceable_override: {min_interest_coverage: 8.0, max_net_debt_to_ebitda: 2.0}
+  pe_vs_own_history: {favourable_max: 0.30, unfavourable_min: 0.85, source: "own 5–10y fiscal-year-end P/E range"}
+
+# Metrics compared against peers: metric key -> (vendor info field, orientation, transform)
+peer_metrics:
+  trailing_pe:            {vendor: trailingPE, better: lower}
+  forward_pe:             {vendor: forwardPE, better: lower}
+  peg_forward:            {vendor: trailingPegRatio, better: lower}
+  ev_to_ebitda:           {vendor: enterpriseToEbitda, better: lower}
+  price_to_sales:         {vendor: priceToSalesTrailing12Months, better: lower}
+  price_to_book:          {vendor: priceToBook, better: lower}
+  price_to_fcf:           {vendor: _price_to_fcf, better: lower}
+  fcf_yield:              {vendor: _fcf_yield, better: higher}
+  debt_to_equity:         {vendor: debtToEquity, better: lower, scale: 0.01}
+  current_ratio:          {vendor: currentRatio, better: higher}
+  gross_margin_ttm:       {vendor: grossMargins, better: higher}
+  operating_margin_ttm:   {vendor: operatingMargins, better: higher}
+  net_margin_ttm:         {vendor: profitMargins, better: higher}
+  roe_ttm:                {vendor: returnOnEquity, better: higher}
+  revenue_yoy_quarterly:  {vendor: revenueGrowth, better: higher}
+  diluted_eps_yoy_quarterly: {vendor: earningsGrowth, better: higher}
+  fcf_margin_ttm:         {vendor: _fcf_margin, better: higher}
+  ev_to_sales:            {vendor: enterpriseToRevenue, better: lower}
+  quick_ratio:            {vendor: quickRatio, better: higher}
+  roa_ttm:                {vendor: returnOnAssets, better: higher}

@@ -1,0 +1,44 @@
+# Committee decision gates and policy. Scores are never averaged into a decision.
+# Gates remove options; the policy then proposes one outcome from what remains; the LLM
+# committee (when configured) may choose another *allowed* outcome only with a written,
+# evidence-cited rationale, which is recorded as a policy override.
+version: "decision-policy-2026.11-v1"
+
+gates:
+  block_buy_now:
+    - {id: data_quality_critical, rule: "data quality status is critical or a material critical-field conflict exists"}
+    - {id: missing_critical_financials, rule: "any critical financial field missing"}
+    - {id: unresolved_high_severity_objection, rule: "a high-severity, high-likelihood Devil's Advocate objection remains unresolved"}
+    - {id: extreme_valuation_unexplained, rule: "valuation score < 2.5 (extreme vs peers and growth)"}
+    - {id: portfolio_constraint, rule: "adding the stock breaches a stated portfolio constraint (excluded sector or max position)"}
+    - {id: thesis_invalidating_event, rule: "a high-materiality negative event (e.g. 8-K 4.02 non-reliance) is unresolved"}
+    - {id: low_confidence, rule: "confidence below min_confidence_for_buy"}
+  force_review_on: [thesis_invalidating_event]
+
+thresholds:
+  min_confidence_for_buy: 0.55
+  buy_now: {quality_min: 7.0, valuation_min: 5.0, technical_min: 5.0, risk_min: 4.0}
+  wait:    {quality_min: 6.0}
+  reject:  {quality_max: 3.5, risk_max_with_weak_quality: 3.0, weak_quality_max: 5.5}
+
+confidence:
+  # confidence = assessment quality / evidence sufficiency, NOT probability of profit
+  base: 0.85
+  penalties:
+    data_quality: from_report          # good 0, acceptable 0.08, poor 0.20, critical 0.40
+    per_unavailable_dimension: 0.04
+    per_material_disagreement: 0.05
+    per_unresolved_question: 0.03
+    no_llm_narrative: 0.10             # deterministic-only mode
+    news_not_assessed: 0.05
+  floor: 0.10
+  cap: 0.90
+
+allocation:
+  # illustrative max single-position sizes by risk tolerance (risk-budget method)
+  max_position_by_tolerance: {conservative: 0.03, moderate: 0.05, aggressive: 0.08}
+  target_vol_contribution_by_tolerance: {conservative: 0.06, moderate: 0.10, aggressive: 0.15}
+
+review_loop:
+  max_rounds: 2
+  max_questions_per_round: 3

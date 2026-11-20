@@ -1,0 +1,36 @@
+# Scoring rubrics. Scores are diagnostic inputs, not facts. All scores: 0–10, HIGHER = MORE FAVOURABLE.
+# (For risk, higher = LOWER risk.) Verdict points: favourable = 1.0, neutral = 0.5, unfavourable = 0.0.
+# Unavailable / not-meaningful metrics are excluded; coverage (share of weight with data) is reported and
+# a dimension with < 50% coverage is excluded and lowers confidence.
+version: "rubrics-2026.11-v1"
+scale: {zero: "every assessed metric unfavourable", five: "mixed / in line with peers", ten: "every assessed metric favourable"}
+
+fundamental_quality:
+  growth:          {weight: 0.25, metrics: [revenue_yoy_annual, revenue_cagr_3y, revenue_yoy_quarterly, diluted_eps_yoy_annual, diluted_eps_cagr_3y, diluted_eps_yoy_quarterly]}
+  profitability:   {weight: 0.20, metrics: [gross_margin_ttm, operating_margin_ttm, net_margin_ttm]}
+  returns:         {weight: 0.15, metrics: [roe_ttm, roic_annual]}
+  financial_health: {weight: 0.15, metrics: [debt_to_equity, net_debt_to_ebitda, interest_coverage, current_ratio, altman_z]}
+  cash_flow:       {weight: 0.15, metrics: [fcf_margin_ttm, fcf_conversion_annual]}
+  quality:         {weight: 0.10, metrics: [piotroski_f_score, accruals_ratio_annual, share_change_1y]}
+
+valuation:
+  multiples:       {weight: 0.45, metrics: [trailing_pe, forward_pe, ev_to_ebitda, price_to_fcf, ev_to_sales]}
+  growth_adjusted: {weight: 0.35, metrics: [peg_forward, peg_trailing]}
+  own_history:     {weight: 0.20, metrics: [pe_vs_own_history]}
+
+technical:
+  trend:             {weight: 0.35}
+  momentum:          {weight: 0.20}
+  relative_strength: {weight: 0.30}
+  volume:            {weight: 0.15}
+
+risk:
+  volatility:  {weight: 0.25}
+  drawdown:    {weight: 0.25}
+  leverage:    {weight: 0.25}
+  market:      {weight: 0.15}
+  liquidity:   {weight: 0.10}
+
+news:
+  # sentiment × materiality; requires LLM classification (no keyword heuristics)
+  materiality_weights: {high: 3, medium: 2, low: 1}
