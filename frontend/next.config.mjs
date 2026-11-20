@@ -1,11 +1,7 @@
-/** API calls go to same-origin /api/* and are proxied to FastAPI, so no API keys or backend URLs reach the browser. */
-const backend = process.env.API_INTERNAL_URL || "http://127.0.0.1:8000";
+/** API calls go to same-origin /api/* and are proxied at runtime by app/api/[...path]/route.ts (API_INTERNAL_URL). */
 const nextConfig = {
   reactStrictMode: true,
   output: "standalone",
-  async rewrites() {
-    return [{ source: "/api/:path*", destination: `${backend}/api/:path*` }];
-  },
   async headers() {
     return [{ source: "/:path*", headers: [
       { key: "X-Content-Type-Options", value: "nosniff" },

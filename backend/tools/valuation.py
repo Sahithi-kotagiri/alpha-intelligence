@@ -32,6 +32,7 @@ class MarketSnapshot(BaseModel):
     market_cap_id: str = "val.market_cap"
     currency: str | None
     vendor: dict[str, Any] = {}
+    notes: list[str] = []
 
 
 def _f(x) -> float | None:
@@ -54,6 +55,15 @@ def market_snapshot(prices: pd.DataFrame | None, info: dict[str, Any], fd: Finan
         p = fd.latest_instant["shares_outstanding"]
         shares, src, sid = p.value, f"balance sheet {p.fiscal_period}", p.id
     mcap = price * shares if (price is not None and shares) else None
+    notes: list[str] = []
+    vmc = _f(info.get("marketCap"))
+    if mcap and vmc and abs(mcap / vmc - 1) > 0.15:
+        # multi-class share structures (e.g. BRK.A/BRK.B, GOOG/GOOGL): price × one class's shares understates value
+        notes.append(f"Price × reported shares ({mcap / 1e9:,.0f}B) differs from vendor company-wide market cap "
+                     f"({vmc / 1e9:,.0f}B) by {abs(mcap / vmc - 1):.0%}: multi-class share structure suspected; vendor market "
+                     "cap used and shares expressed as equivalents of the quoted class.")
+        mcap, shares = vmc, vmc / price
+        src = "vendor company-wide market cap ÷ price (class-equivalent shares)"
     vendor_keys = ["trailingPE", "forwardPE", "pegRatio", "trailingPegRatio", "debtToEquity", "enterpriseValue",
                    "enterpriseToEbitda", "enterpriseToRevenue", "priceToBook", "priceToSalesTrailing12Months",
                    "marketCap", "forwardEps", "trailingEps", "dividendYield", "beta", "earningsGrowth", "revenueGrowth",
@@ -61,7 +71,7 @@ def market_snapshot(prices: pd.DataFrame | None, info: dict[str, Any], fd: Finan
                    "heldPercentInsiders", "heldPercentInstitutions", "auditRisk", "boardRisk", "compensationRisk",
                    "shareHolderRightsRisk", "overallRisk", "recommendationMean", "numberOfAnalystOpinions",
                    "targetMeanPrice", "targetLowPrice", "targetHighPrice", "shortPercentOfFloat", "averageVolume"]
-    return MarketSnapshot(price=price, price_date=price_date, price_id=f"px.close.{price_date}",
+    return MarketSnapshot(price=price, price_date=price_date, price_id=f"px.close.{price_date}", notes=notes,
                           shares_outstanding=shares, shares_source=src, shares_id=sid, market_cap=mcap,
                           currency=info.get("currency"), vendor={k: info.get(k) for k in vendor_keys if info.get(k) is not None})
 
@@ -98,7 +108,7 @@ def compute_valuation(fd: FinancialData | None, snap: MarketSnapshot, metrics: l
                       value=mcap, unit="USD", period=period, period_end=snap.price_date,
                       formula="latest close × shares outstanding", inputs=[snap.price_id, snap.shares_id],
                       status="ok" if mcap else "unavailable", reason=None if mcap else "price or shares unavailable",
-                      notes=[f"Shares from {snap.shares_source}."]))
+                      notes=[f"Shares from {snap.shares_source}."] + snap.notes))
     if currency_mismatch:
         for key, label in [("trailing_pe", "Trailing P/E"), ("forward_pe", "Forward P/E"), ("peg_forward", "PEG (forward)"),
                            ("ev_to_ebitda", "EV/EBITDA"), ("price_to_fcf", "Price / free cash flow")]:
@@ -125,7 +135,24 @@ def compute_valuation(fd: FinancialData | None, snap: MarketSnapshot, metrics: l
                           inputs=[num_id, den_pt.id, *extra_inputs], higher_is_better=hib))
 
     eps_t = ttm.get("diluted_eps")
+    v_eps = _f(snap.vendor.get("trailingEps"))
+    class_note = None
+    if v_eps and v_eps > 0 and (eps_t is None or eps_t.value is None or eps_t.value <= 0
+                                or not (0.2 < eps_t.value / v_eps < 5)):
+        if eps_t is not None and eps_t.value and not (0.2 < eps_t.value / v_eps < 5):
+            class_note = (f"Statement EPS {eps_t.value:,.2f} is inconsistent with the quoted share class (vendor EPS "
+                          f"{v_eps:,.2f}); multi-class shares suspected, vendor EPS used.")
+        elif eps_t is None or eps_t.value is None:
+            class_note = "TTM diluted EPS unavailable from statements; vendor trailing EPS used."
+        if class_note:
+            from backend.data.provenance import DataPoint as _DP
+
+            eps_t = _DP(id="vendor.trailing_eps", field="diluted_eps", label="Trailing EPS (vendor, quoted share class)",
+                        value=v_eps, unit="USD/share", period_type="ttm", source_name="Yahoo Finance via yfinance",
+                        source_type="market_data_vendor", quality="unverified", notes=[class_note])
     pe = ratio("trailing_pe", "Trailing P/E", price, snap.price_id, eps_t, "latest close / TTM diluted EPS")
+    if class_note:
+        pe.notes.append(class_note)
     vend_pe = _f(snap.vendor.get("trailingPE"))
     if pe.ok and vend_pe:
         diff = abs(pe.value - vend_pe) / vend_pe

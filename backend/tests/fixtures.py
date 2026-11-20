@@ -130,7 +130,7 @@ class Co:
         if self.conflict_revenue:
             d, v = ann[-2]  # prior FY: its 10-K is already filed, so SEC can cross-check it
             v = dict(v)
-            v["revenue"] = v["revenue"] * 1.2
+            v["revenue"] = v["revenue"] * 0.8
             ann[-2] = (d, v)
         qs = [(self.qends[i], self.q(i)) for i in range(19, 24)]
         bal_a = [(d, self.balance(0)) for d in a_ends]

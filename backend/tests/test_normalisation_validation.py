@@ -58,12 +58,12 @@ def test_point_in_time_filter_excludes_later_filings():
 
 
 def test_cross_check_conflict_uses_sec_and_preserves_vendor():
-    c = default_companies()["TSTX"]  # vendor revenue inflated 20% in the prior FY
+    c = default_companies()["TSTX"]  # vendor revenue understated 20% in the prior FY
     fd = build_financials(c.ticker, c.statements(), c.facts(), c.cik, "USD")
     latest = [p for p in fd.annual["revenue"] if p.value is not None][-2]
     assert latest.quality == Quality.CONFLICT
     assert latest.source_type.value == "regulatory_filing"
-    assert latest.original_value == pytest.approx(latest.value * 1.2)
+    assert latest.original_value == pytest.approx(latest.value * 0.8)
     assert any("source-priority" in n for n in latest.notes)
 
 
@@ -159,3 +159,25 @@ def test_split_adjustment_of_pre_split_filings():
     assert adjust_for_splits(fd, px) == 1
     assert fd.annual["diluted_eps"][0].value == 3.0 and fd.annual["diluted_eps"][0].original_value == 12.0
     assert fd.annual["diluted_eps"][1].value == 4.0
+
+
+def test_scale_mismatch_and_definition_difference():
+    from backend.data.normalisation import compare, scale_mismatch
+
+    assert scale_mismatch(741_300_000, 741.3) == 1e6
+    assert compare(741_300_000, 741.3)[1] == "unit_scale_mismatch"
+    c = default_companies()["TSTA"]
+    st = c.statements()
+    st.income_annual.loc["Selling General And Administration"] *= 1.3  # vendor defines SG&A differently
+    fd = build_financials(c.ticker, st, c.facts(), c.cik, "USD")
+    assert not [x for x in fd.cross_checks if x["field"] == "sga" and x["status"] == "conflict"]
+
+
+def test_revenue_takes_largest_concept_per_period():
+    facts = {"facts": {"us-gaap": {
+        "RevenueFromContractWithCustomerExcludingAssessedTax": {"units": {"USD": [
+            {"start": "2023-01-01", "end": "2023-12-31", "val": 24.8, "accn": "a", "form": "10-K", "filed": "2024-02-01"}]}},
+        "Revenues": {"units": {"USD": [
+            {"start": "2023-01-01", "end": "2023-12-31", "val": 28.1, "accn": "a", "form": "10-K", "filed": "2024-02-01"}]}}}}}
+    annual, _ = sec_field_series(facts, FIELDS["revenue"])
+    assert annual[date(2023, 12, 31)].value == 28.1
