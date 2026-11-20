@@ -125,6 +125,10 @@ class FinalDecisionAgent:
             except LLMError as exc:
                 report["mode"] = "deterministic_fallback"
                 report["narrative_error"] = str(exc)
+        if ctx.params.get("reassessment"):
+            report["reassessment"] = {"reasons": ctx.params.get("reassessment_reasons") or [],
+                                      "items": ctx.params["reassessment"],
+                                      "previous": ctx.params.get("prior")}
         report["meta"] = {
             "analysis_id": ctx.analysis_id, "generated_at": datetime.now(UTC).isoformat(),
             "price_date": ctx.data_through.get("prices"), "reference_price": snap_price,

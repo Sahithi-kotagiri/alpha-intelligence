@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
 import { dt, pct } from "@/lib/format";
 import { Badge, Card, Empty, ErrorBox, Loading, RecBadge, Status } from "@/components/ui";
+import { ReadAloud } from "@/components/Voice";
 
 export default function Watchlist() {
   const wl = useApi<any>("/watchlist");
@@ -69,7 +70,8 @@ export default function Watchlist() {
               </div>
             </div>))}
         </Card>
-        <Card title="Alerts" sub="Generated only from real monitoring events">
+        <Card title="Alerts" sub="Generated only from real monitoring events"
+          actions={<ReadAloud label="Read unread alerts" parts={(alerts.data?.alerts || []).filter((a: any) => !a.read).map((a: any) => `${a.title}. ${a.message}`)} />}>
           {alerts.data && !alerts.data.alerts.length && <p className="muted small">No alerts yet.</p>}
           {(alerts.data?.alerts || []).map((a: any) => (
             <div key={a.id} className="claim small" style={{ opacity: a.read ? 0.6 : 1 }}>

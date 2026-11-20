@@ -121,7 +121,7 @@ def check_thesis(db, providers, thesis: M.InvestmentThesis, fresh: dict[str, Any
                         f"{a.description}: {before} → {new}", SEVERITY.get(new, "low"),
                         f"assumption:{a.id}:{new}:{fresh.get('latest_period_end') or fresh.get('price_date')}",
                         {"original": a.original_value, "current": cur, "threshold": a.threshold, "review": a.review_threshold,
-                         "evidence": evidence, "comparator": a.comparator}, a, before, new)
+                         "evidence": evidence, "comparator": a.comparator, "metric_key": a.metric_key}, a, before, new)
             if ev:
                 events.append(ev)
                 _alert(db, thesis.user_id, thesis.ticker, "thesis_change", SEVERITY.get(new, "low"),
@@ -185,6 +185,33 @@ def check_thesis(db, providers, thesis: M.InvestmentThesis, fresh: dict[str, Any
     return {"events": events, "material": material, "reasons": reasons, "errors": fresh.get("errors", [])}
 
 
+AGENT_FOR_METRIC = {"dist_sma_200": "technical", "net_debt_to_ebitda": "risk_portfolio"}
+
+
+def reassessment_focus(events: list[M.ThesisEvent]) -> list[dict[str, Any]]:
+    """Route each material change to the agent responsible for it (brief §12.4): metric assumptions to the
+    Fundamental Analyst (trend → Technical, leverage → Risk & Portfolio), filings to News & Sentiment, price moves to Technical."""
+    out = []
+    for e in events:
+        d = e.detail or {}
+        if e.event_type == "assumption_status_change":
+            metric = None
+            if e.assumption_id is not None:
+                metric = d.get("metric_key")
+            agent = AGENT_FOR_METRIC.get(d.get("metric_key") or "", "fundamental")
+            out.append({"agent": agent, "kind": "assumption", "title": e.title, "status_before": e.status_before,
+                        "status_after": e.status_after, "original": d.get("original"), "current": d.get("current"),
+                        "threshold": d.get("threshold"), "evidence": d.get("evidence"), "metric_key": metric or d.get("metric_key")})
+        elif e.event_type == "sec_filing":
+            out.append({"agent": "news", "kind": "filing", "title": e.title, "items": d.get("items"), "url": e.source_url})
+        elif e.event_type == "price_move":
+            out.append({"agent": "technical", "kind": "price", "title": e.title, "reference": d.get("reference"),
+                        "current": d.get("current")})
+        elif e.event_type == "new_financial_period":
+            out.append({"agent": "fundamental", "kind": "results", "title": e.title})
+    return out
+
+
 def run_monitoring(session_factory, providers, runner=None, user_id: int | None = None) -> dict[str, Any]:
     from backend.services.analysis_service import create_analysis
 
@@ -217,6 +244,7 @@ def run_monitoring(session_factory, providers, runner=None, user_id: int | None 
                         params = dict((run.params or {}) if run else {})
                         params.pop("prior", None)
                         params["reassessment_reasons"] = out["reasons"]
+                        params["reassessment"] = reassessment_focus(out["events"])
                         new = create_analysis(db, th.user_id, th.ticker, params, trigger="monitoring", parent_id=th.analysis_id)
                         for ev in out["events"]:
                             ev.reassessment_analysis_id = new.id

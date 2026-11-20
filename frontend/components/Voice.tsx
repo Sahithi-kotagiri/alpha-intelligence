@@ -12,6 +12,19 @@ function prefs() {
   }
 }
 
+export function voiceEnabled(): boolean {
+  return prefs().enabled !== false;
+}
+
+/** Reads given text aloud on request (alerts, thesis changes). Never autoplays; text stays on screen. */
+export function ReadAloud({ parts, label = "Read aloud" }: { parts: string[]; label?: string }) {
+  const tts = useSpeechSynthesis();
+  if (!voiceEnabled() || !tts.supported || !parts.length) return null;
+  return tts.speaking
+    ? <button className="btn-sm" onClick={tts.stop} aria-label="Stop reading">■ Stop</button>
+    : <button className="btn-sm" onClick={() => tts.speak(parts, prefs().rate || 1, prefs().voice)}>▶ {label}</button>;
+}
+
 /** "Listen to briefing": transcript always visible; audio only starts on click; stop/pause/speed controls. */
 export function BriefingPlayer({ analysisId, agent }: { analysisId: string; agent?: string }) {
   const [brief, setBrief] = useState<{ sections?: { title: string; text: string }[]; text: string } | null>(null);
@@ -65,6 +78,15 @@ export function BriefingPlayer({ analysisId, agent }: { analysisId: string; agen
     if (audioRef.current) audioRef.current.currentTime = 0;
   };
 
+  if (!voiceEnabled()) {
+    return (
+      <div className="stack">
+        <div className="xs faint">Voice is turned off in Settings; the transcript is shown below.</div>
+        {brief?.sections ? <div className="small" aria-label="Briefing transcript">{brief.sections.map((s) => <p key={s.title}><strong>{s.title}.</strong> {s.text}</p>)}</div>
+          : brief ? <p className="small">{brief.text}</p> : null}
+      </div>
+    );
+  }
   return (
     <div className="stack">
       <div className="row">
@@ -122,7 +144,9 @@ export function AskBox({ onAsk, busy }: { onAsk: (q: string, mode: "text" | "voi
         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }} />
       <div className="row between">
         <div className="row">
-          {sr.supported ? (
+          {!voiceEnabled() ? (
+            <span className="xs faint">Voice input is off (Settings).</span>
+          ) : sr.supported ? (
             sr.state === "listening" ? (
               <button onClick={sr.stop} aria-label="Stop listening"><span className="pulse-dot" /> Listening… stop</button>
             ) : (

@@ -28,6 +28,15 @@ function Claims({ items }: { items?: any[] }) {
 export function SummaryView({ r, analysisId }: { r: any; analysisId: string }) {
   const f = r.final;
   return (
+    <>
+    {f.reassessment && (
+      <div className="callout warn mb small">
+        <strong>Monitoring reassessment.</strong> Triggered by: {f.reassessment.reasons.join("; ") || "material change"}.
+        {f.reassessment.previous && <> Previous decision: {f.reassessment.previous.recommendation}.</>}
+        <ul className="clean mt-s">{f.reassessment.items.map((x: any, i: number) => (
+          <li key={i}>{x.title} <span className="faint">→ reassessed by {AGENT_TITLES[x.agent] || x.agent}</span></li>))}</ul>
+      </div>
+    )}
     <div className="grid g2">
       <Card title="Executive summary" sub={f.mode === "llm" ? "Written by the final-decision agent from the committee record" : "Generated from rule-based committee output"}>
         <p className="serif" style={{ fontSize: 15, lineHeight: 1.6 }}>{f.executive_summary}</p>
@@ -81,6 +90,7 @@ export function SummaryView({ r, analysisId }: { r: any; analysisId: string }) {
         <p className="xs faint mt">Versions: {Object.entries(f.meta.versions).map(([k, v]) => `${k} ${v}`).join(" · ")} · analysis {f.meta.analysis_id}</p>
       </Card>
     </div>
+    </>
   );
 }
 
@@ -125,6 +135,9 @@ function AgentRow({ rep, analysisId }: { rep: any; analysisId: string }) {
                 ? `Estimated ${rep.deterministic.thesis_failure.low_pct}–${rep.deterministic.thesis_failure.high_pct}% (${rep.deterministic.thesis_failure.label || rep.deterministic.thesis_failure.basis}).`
                 : rep.deterministic.thesis_failure.basis}</div>)}
           {rep.model_run && <p className="xs faint">Model {rep.model_run.model} · prompt {rep.model_run.prompt_version} · {rep.model_run.input_tokens}→{rep.model_run.output_tokens} tokens</p>}
+          <div className="row mt">
+            <button className="btn-sm" onClick={() => askAbout(`Regarding the ${rep.title} report: what are its main conclusions, what evidence supports them, and what limits its confidence?`)}>Ask about this report</button>
+          </div>
           <div className="mt"><BriefingPlayer analysisId={analysisId} agent={rep.agent} /></div>
         </div>
       )}

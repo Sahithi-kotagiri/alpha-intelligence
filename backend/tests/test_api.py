@@ -173,6 +173,10 @@ def test_thesis_monitoring_detects_change_and_reassesses(client):
     assert any(e["type"] == "sec_filing" and e["materiality"] == "high" for e in evs)
     new = wait_for(client, out["reassessments"][0])
     assert new["trigger"] == "monitoring" and new["parent_id"] == aid
+    re_ = new["result"]["final"]["reassessment"]
+    assert {i["agent"] for i in re_["items"]} >= {"fundamental", "news"}
+    fund = new["result"]["reports"]["fundamental"]
+    assert any(c["text"].startswith("Reassessment trigger") for c in fund["claims"])
     # the reassessment cannot recommend Buy Now with an unresolved 4.02 non-reliance filing
     assert "Buy Now" not in new["result"]["final"]["allowed_recommendations"]
     # second run: no duplicate events / no new reassessment within cooldown

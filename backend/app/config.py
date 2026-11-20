@@ -36,7 +36,11 @@ class Settings(BaseSettings):
     universe_screen_concurrency: int = 4
 
     # --- LLM (provider-agnostic; business logic never imports a vendor SDK) -----------
-    llm_provider: str = Field(default="none", description="none | anthropic")
+    llm_provider: str = Field(default="none", description="none | anthropic | openai_compatible")
+    # OpenAI-compatible chat-completions endpoint (free options: Ollama locally, Gemini free tier, Groq, OpenRouter)
+    llm_base_url: str | None = None  # e.g. http://localhost:11434/v1 (Ollama)
+    llm_api_key: SecretStr | None = None  # not needed for Ollama
+    llm_json_mode: str = Field(default="json_schema", description="json_schema | json_object | prompt")
     anthropic_api_key: SecretStr | None = None
     # Pinned explicitly so an ANTHROPIC_BASE_URL meant for other tools is never picked up.
     claude_api_base_url: str = "https://api.anthropic.com"  # env CLAUDE_API_BASE_URL (deliberately not ANTHROPIC_BASE_URL)
@@ -74,6 +78,8 @@ class Settings(BaseSettings):
     def llm_configured(self) -> bool:
         if self.llm_provider == "anthropic":
             return self.anthropic_api_key is not None
+        if self.llm_provider == "openai_compatible":
+            return bool(self.llm_base_url) and not self.llm_model.startswith("claude-")
         return False
 
     @property

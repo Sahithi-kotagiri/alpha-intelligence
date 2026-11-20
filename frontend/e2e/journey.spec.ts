@@ -93,3 +93,14 @@ test("keyboard navigation reaches tabs with visible focus", async ({ page }) => 
   const outline = await page.evaluate(() => getComputedStyle(document.activeElement as Element).outlineStyle);
   expect(outline).not.toBe("none");
 });
+
+test("voice turned off hides audio controls but keeps transcripts", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("ii_voice", JSON.stringify({ enabled: false })));
+  await page.goto("/analyze?ticker=TSTD");
+  await page.getByRole("button", { name: /Confirm TSTD/ }).click();
+  await expect(page.locator(".decision-head")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/Voice is turned off in Settings/).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Listen to briefing" })).toHaveCount(0);
+  await page.getByRole("tab", { name: "Ask" }).click();
+  await expect(page.getByText(/Voice input is off/)).toBeVisible();
+});

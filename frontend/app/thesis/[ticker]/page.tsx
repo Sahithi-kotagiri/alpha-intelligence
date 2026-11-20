@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
 import { byUnit, dt } from "@/lib/format";
 import { Badge, Card, ErrorBox, Loading, RecBadge, Status } from "@/components/ui";
+import { ReadAloud } from "@/components/Voice";
 
 export default function ThesisDetail({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = use(params);
@@ -43,7 +44,8 @@ export default function ThesisDetail({ params }: { params: Promise<{ ticker: str
         </table></div>
       </Card>
       <div className="grid g2 mt">
-        <Card title="Events" sub="Each event links to its evidence and any reassessment it triggered">
+        <Card title="Events" sub="Each event links to its evidence and any reassessment it triggered"
+          actions={<ReadAloud label="Read changes" parts={(ev.data?.events || []).slice(0, 8).map((e: any) => `${e.title}.${e.status_before ? ` Status changed from ${e.status_before} to ${e.status_after}.` : ""}`)} />}>
           {ev.data && !ev.data.events.length && <p className="muted small">No events since the thesis was created.</p>}
           {(ev.data?.events || []).map((e: any) => (
             <div key={e.id} className="claim small">

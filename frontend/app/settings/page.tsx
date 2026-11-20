@@ -12,21 +12,21 @@ export default function Settings() {
   const src = useApi<any>("/data-sources");
   const uni = useApi<any>("/universe");
   const tts = useSpeechSynthesis();
-  const [voice, setVoice] = useState<any>({ provider: "browser", voice: "", rate: 1 });
+  const [voice, setVoice] = useState<any>({ enabled: true, provider: "browser", voice: "", rate: 1 });
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [theme, setTheme] = useState("system");
 
   useEffect(() => {
     try {
-      setVoice({ provider: "browser", voice: "", rate: 1, ...JSON.parse(localStorage.getItem("ii_voice") || "{}") });
+      setVoice({ enabled: true, provider: "browser", voice: "", rate: 1, ...JSON.parse(localStorage.getItem("ii_voice") || "{}") });
       setTheme(localStorage.getItem("ii_theme") || "system");
     } catch { /* storage unavailable */ }
   }, []);
 
   const saveVoice = async () => {
     try { localStorage.setItem("ii_voice", JSON.stringify(voice)); } catch { /* ignore */ }
-    await api("/settings", { method: "PUT", json: { voice_provider: voice.provider, voice_name: voice.voice || null, voice_rate: voice.rate } }).catch(() => {});
+    await api("/settings", { method: "PUT", json: { voice_enabled: voice.enabled, voice_provider: voice.provider, voice_name: voice.voice || null, voice_rate: voice.rate } }).catch(() => {});
     setMsg("Voice preferences saved.");
   };
   const applyTheme = (t: string) => {
@@ -62,9 +62,10 @@ export default function Settings() {
               <dt>Server voice</dt><dd>{sv.voice_configured ? <Badge tone="pos">{sv.voice_provider}</Badge> : <Badge>browser speech only</Badge>}</dd>
               <dt>Authentication</dt><dd>{sv.auth_mode === "local" ? <Badge tone="warn">local single-user</Badge> : <Badge tone="pos">token</Badge>}</dd>
             </dl>
-            {!sv.llm_configured && <p className="xs faint mt-s">To enable LLM interpretation set LLM_PROVIDER=anthropic and ANTHROPIC_API_KEY in the backend environment and restart.</p>}
+            {!sv.llm_configured && <p className="xs faint mt-s">To enable LLM interpretation set LLM_PROVIDER=anthropic (with ANTHROPIC_API_KEY) or LLM_PROVIDER=openai_compatible (free: Ollama, Gemini, Groq, OpenRouter; set LLM_BASE_URL and LLM_MODEL) in .env and restart the backend.</p>}
           </Card>
           <Card title="Voice" sub="Microphone is requested only when you press Speak. Audio is never stored.">
+            <label className="check mb"><input type="checkbox" checked={voice.enabled} onChange={(e) => setVoice({ ...voice, enabled: e.target.checked })} /> Voice features on</label>
             <div className="grid g2">
               <label className="field">Speech engine
                 <select value={voice.provider} onChange={(e) => setVoice({ ...voice, provider: e.target.value })}>

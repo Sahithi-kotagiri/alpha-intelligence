@@ -40,19 +40,19 @@ Persistence: SQLAlchemy + Alembic (SQLite locally, PostgreSQL tested); immutable
 | | Segment data, guidance text, call transcripts, debt maturities | ⬜ not available from current free sources (stated in reports) |
 | §6.3–6.4 | Provenance on every data point; validation rules; data-quality summary; confidence reduction | ✅ |
 | §7 agents | Fundamental, Technical, News & Sentiment, Risk & Portfolio, Devil's Advocate; evidence-ID citations; fact/interpretation labels; missing info; schema-validated outputs | ✅ |
-| | LLM interpretation running live | 🟡 implemented and tested with a scripted LLM and a mock-transport Anthropic test; **not run live: no API key in this environment** |
+| | LLM interpretation running live | 🟡 implemented for Claude and OpenAI-compatible providers (free: Ollama, Gemini, Groq, OpenRouter); tested with a scripted LLM and mock HTTP servers, including a full graph run through the OpenAI-compatible adapter; **not yet run against a real model** |
 | §8 committee | Agreement/disagreement, evidence tracing, time-horizon vs analytical, consistency checks, bounded review loop with log, unresolved questions preserved | ✅ |
 | §9 final | Exactly one of 4 outcomes; confidence (not profit probability); thesis; risks; entry price (or explicit refusal); allocation (or required inputs); monitoring plan; executive summary; metadata | ✅ |
 | §10 scoring | Rubrics with 0/5/10 meaning, weights, missing-data handling, direction, versions; decision gates, not averages | ✅ |
 | §11 history and performance | Immutable versions, full snapshots, user comments/actions attributed; 21/63/126/252-session outcomes vs benchmark; hit rates; by category, score band and sector | ✅ |
 | | By market regime | ⬜ (sample too small to be meaningful) |
 | §12 thesis monitoring | Testable assumptions, materiality bands, statuses, events, alerts, versioned reassessment, history preserved, no continuous LLM runs | ✅ |
-| | Per-agent partial reassessment | 🟡 reassessment re-runs the full versioned analysis |
+| | Reassessment routed to the relevant agent | ✅ each triggering change goes to the responsible agent (assumptions → Fundamental, trend/price → Technical, leverage → Risk, filings → News), which must address it; the committee then re-runs and a new version is saved |
 | §13 portfolio | Weights, sector exposure, correlation, volatility, drawdown, beta, risk contributions, candidate impact, stress, constraints (excluded sectors, max position) | ✅ |
 | | Currency exposure | 🟡 listing-currency only; revenue-currency exposure unavailable |
-| §14 interface | Overview, analysis, committee, watchlist and alerts, thesis monitor, history and compare, portfolio, performance and evaluation, screener, settings and data sources; restrained design; dark/light; responsive | ✅ |
+| §14 interface | Per-agent "Ask about this report" follow-ups; overview, analysis, committee, watchlist and alerts, thesis monitor, history and compare, portfolio, performance and evaluation, screener, settings and data sources; restrained design; dark/light; responsive | ✅ |
 | §15 progress | Real persisted events, SSE with Last-Event-ID reconnect and polling fallback, failures with retry, waiting state | ✅ |
-| §16 voice | Mic with states, editable transcript, briefing from the saved report, agent summaries, stop/pause/speed, voice selection, no autoplay, no audio storage, denial handling, text fallback, provider abstraction | ✅ (browser speech tested; OpenAI server adapter tested via mock transport, not live) |
+| §16 voice | Mic with states, editable transcript, briefing from the saved report, agent summaries, alerts and thesis changes read aloud on request, stop/pause/speed, voice on/off and selection, no autoplay, no audio storage, denial handling, text fallback, provider abstraction | ✅ (browser speech tested; OpenAI server adapter tested via mock transport, not live) |
 | §17 charts | Revenue, EPS, margins, cash flow, debt and cash, valuation history, price + MAs + volume, RSI, relative performance, scenarios, weights, correlation; units, sources, dates, gaps not interpolated, table views, ask-about-chart | ✅ |
 | | Texture fills for forced-colours/print | ⬜ |
 | §18 assistant | Grounded answers with citations; fresh-data flag; history; voice or text | ✅ (LLM mode tested with scripted LLM; rule-based mode answers 8 question types) |

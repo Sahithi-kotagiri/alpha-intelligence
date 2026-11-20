@@ -118,10 +118,23 @@ class BaseAgent:
         report.missing_information = sorted(set(report.missing_information + narrative.get("missing_information", [])))
 
     # -------------------------------------------------------------- run
+    def focus(self, ctx: AgentContext) -> list[dict[str, Any]]:
+        """Monitoring-triggered changes routed to this agent (thesis reassessment, brief §12.4)."""
+        return [f for f in (ctx.params.get("reassessment") or []) if f.get("agent") == self.name]
+
+    def focus_text(self, ctx: AgentContext) -> str:
+        f = self.focus(ctx)
+        if not f:
+            return ""
+        lines = "\n".join(f"- {x['title']}" + (f" (original {x.get('original')}, now {x.get('current')}, threshold "
+                                                f"{x.get('threshold')})" if x.get("kind") == "assumption" else "") for x in f)
+        return ("\n\nTHESIS REASSESSMENT: monitoring detected these material changes since the previous decision. Address each "
+                "explicitly: is it temporary or structural, how reliable is the evidence, and does it weaken the thesis?\n" + lines)
+
     def build_user_prompt(self, ctx: AgentContext, items: list[EvidenceItem], det: dict[str, Any]) -> str:
         return (f"Company: {ctx.company_name} ({ctx.ticker}). Investment horizon: {ctx.params.get('horizon')}. "
                 f"Benchmark: {ctx.params.get('benchmark')}.\nData through: {json.dumps(ctx.data_through, default=str)}\n\n"
-                f"Deterministic context (computed by tested Python rules):\n{self.context_text(ctx, det)}\n\n"
+                f"Deterministic context (computed by tested Python rules):\n{self.context_text(ctx, det)}{self.focus_text(ctx)}\n\n"
                 f"Evidence you may cite ({len(items)} items):\n{render_for_prompt(items)}")
 
     def run(self, ctx: AgentContext, llm: LLMClient | None, emit: Emit) -> AgentReportOut:
@@ -129,6 +142,11 @@ class BaseAgent:
         items = self.scope(ctx)
         allowed = {i.id for i in items}
         det = self.deterministic(ctx)
+        for f in self.focus(ctx):  # rule-based reassessment note, present in every mode
+            det.setdefault("claims", [])
+            det["claims"] = [Claim(text=f"Reassessment trigger: {f['title']}" + (
+                f" — original {f.get('original')}, now {f.get('current')}; status {f.get('status_before')} → {f.get('status_after')}."
+                if f.get("kind") == "assumption" else "."), kind="fact", evidence_ids=[])] + list(det["claims"])
         conf, conf_reason = det.get("confidence", ("Medium", ""))
         report = AgentReportOut(
             agent=self.name, title=self.title, responsibility=self.responsibility, status="completed",
@@ -171,7 +189,9 @@ class BaseAgent:
                                 "prompt_sha256": sha_role, "common_prompt_version": v_common,
                                 "input_tokens": res.input_tokens, "output_tokens": res.output_tokens, "latency_ms": res.latency_ms}
             report.guardrails = guard
+            keep = [c for c in report.claims if c.text.startswith("Reassessment trigger")]
             self.apply_narrative(report, narrative, ctx)
+            report.claims = keep + [c for c in report.claims if not c.text.startswith("Reassessment trigger")]
             emit("agent", "completed", f"{self.title}: completed", agent=self.name,
                  detail={"score": report.score.get("score") if report.score else None, "mode": "llm",
                          "invalid_citations": len(bad), "unverified_numbers": len(guard.unverified_numbers)})

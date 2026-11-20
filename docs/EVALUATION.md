@@ -8,10 +8,11 @@ Generated 2026-11-20. Model/provider: none configured at evaluation time (rule-b
 
 | Suite | Result |
 |---|---|
-| Backend unit + integration (`uv run pytest`) | **100 passed**, 1 skipped (live) — SQLite |
+| Backend unit + integration (`uv run pytest`) | **108 passed**, 1 skipped (live) — SQLite |
 | Backend API + service integration on PostgreSQL 16 (`TEST_DATABASE_URL=… pytest backend/tests/test_api.py backend/tests/test_services_extra.py`) | **29 passed**, 1 skipped (live) |
 | Live provider test (`RUN_LIVE=1`) | **passed** (yfinance, SEC, Wikipedia) |
-| Browser E2E (`cd frontend && npx playwright test --trace off`) on synthetic fixtures | **5 passed** |
+| Browser E2E (`cd frontend && npx playwright test --trace off`) on synthetic fixtures | **6 passed** |
+| Fresh clone (`git clone` → `cp .env.example .env` → `uv sync` → start → live MSFT analysis) | **completed** |
 | Line coverage (`pytest --cov=backend`) | **89 %** (live adapters 20–56 %: exercised by live runs below, not offline tests) |
 | Lint / type-check | `ruff` clean; `tsc --noEmit` clean; `next build` succeeds |
 
@@ -23,6 +24,13 @@ What the tests cover (selected):
 - **Agents (scripted LLM).** Only supplied evidence IDs survive (one retry, then removal). LLM failure gives a labelled fallback. The committee cannot choose a gated recommendation, and an override needs a reason. The review loop is bounded. Untrusted text is fenced. News is deduplicated and the news score formula checked. The Anthropic request shape is checked (model, structured output, adaptive thinking, effort, server fallbacks, base URL pinned against `ANTHROPIC_BASE_URL`), as is refusal handling.
 - **API.** The full journey, real ordered events and SSE replay from `Last-Event-ID`, evidence and provenance, the briefing, the rule-based assistant, comments, versioning and comparison, idempotency, provider outage (critical status and Buy Now blocked), unknown ticker with retry, the portfolio constraint gate, watchlist and alerts, and alert preferences. Thesis monitoring detects margin collapse plus an 8-K 4.02, triggers a reassessment that cannot recommend Buy Now, and does not repeat inside the cooldown. Also covered: performance horizons, the baseline requiring an LLM, voice returning 501 without a provider (and rejecting arbitrary text), the OpenAI voice adapter via a mock transport, and settings/delete-my-data. Token auth: 401 without a token, user A's data invisible to user B, logout invalidating the token.
 - **E2E (Chromium).** Search → confirm → run → research log → evidence drawer (Escape closes it) → ask about a metric → committee → data quality → assistant. No speech autoplay, transcript visible, a Stop control. Microphone denial falls back to typing. Screener, no horizontal overflow at 390 px, visible keyboard focus.
+
+Added after the first local install attempt:
+
+- A `.gitignore` bug that excluded `backend/data/` from the repository is fixed.
+- The SQLite folder is now created before migrations run on a fresh checkout.
+- An OpenAI-compatible LLM adapter has 7 tests: request shape, fallback from `json_schema` to `json_object`, stripping reasoning tags and code fences, a corrective retry, the invalid-output fallback, rate-limit retry, and a full graph run through it.
+- Monitoring now routes each reassessment trigger to the responsible agent.
 
 ## 2. Live verification (real data, rule-based mode)
 

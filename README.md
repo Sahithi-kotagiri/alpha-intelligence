@@ -18,8 +18,19 @@ uv sync
 cp .env.example .env
 ```
 
-Edit `.env` and set at least `SEC_USER_AGENT="Your Name you@example.com"` (SEC requires a real contact). To enable LLM
-interpretation, also set `LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY`.
+Edit `.env` and set at least `SEC_USER_AGENT="Your Name you@example.com"` (SEC requires a real contact).
+
+**Optional LLM interpretation.** Without an LLM, the platform runs in labelled rule-based mode: every number, threshold,
+score and decision still works. To add interpretation (news sentiment, moat, management, bear case, open-ended
+questions), choose one:
+
+- **Claude (paid, best quality):** `LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY=...`
+- **Free, local (Ollama):** install Ollama, run `ollama pull qwen3:8b`, then set `LLM_PROVIDER=openai_compatible`,
+  `LLM_BASE_URL=http://localhost:11434/v1`, `LLM_MODEL=qwen3:8b`. Needs about 8 GB RAM.
+- **Free tiers (Gemini, Groq, OpenRouter):** see `.env.example`. These are rate-limited, and free-tier data may be used by the provider.
+
+Smaller free models follow instructions less reliably. Every reply is schema-validated and citation-checked, and any
+agent whose output is still invalid after one retry falls back to its rule-based report and says so.
 
 ```bash
 uv run uvicorn backend.app.main:app --port 8000
@@ -90,8 +101,8 @@ TEST_DATABASE_URL=postgresql+psycopg://user@host/db uv run pytest backend/tests/
 cd frontend && npx playwright test --trace off
 ```
 
-Current results: 100 backend tests pass (89% coverage), 29 pass on PostgreSQL 16, 5 browser E2E tests pass, and the live
-provider test passes. Details are in `docs/EVALUATION.md`.
+Current results: 108 backend tests pass, 29 pass on PostgreSQL 16, 6 browser E2E tests pass, and the live provider test
+passes. Details are in `docs/EVALUATION.md`.
 
 ## What is real and what is not
 
@@ -100,7 +111,7 @@ provider test passes. Details are in `docs/EVALUATION.md`.
 | S&P 500 universe, screening, search | Live |
 | yfinance prices/statements/info/news/estimates, SEC EDGAR filings and XBRL | Live (cached) |
 | All calculations, thresholds, scores, gates, decisions, thesis, monitoring, performance | Live, deterministic |
-| LLM agent interpretation, LLM committee, LLM assistant, single-LLM baseline | Implemented; tested with a scripted LLM; **needs `ANTHROPIC_API_KEY` to run live** |
+| LLM agent interpretation, LLM committee, LLM assistant, single-LLM baseline | Implemented for Claude and any OpenAI-compatible API (Ollama, Gemini, Groq, OpenRouter); tested with a scripted LLM and mock HTTP servers; **not yet run against a real model** |
 | Voice | Browser speech (on-device) works without keys; OpenAI server adapter needs `OPENAI_API_KEY` |
 | Synthetic fixtures | Used only by tests and `scripts/run_fixture_server.py`; names marked "(synthetic)" |
 
