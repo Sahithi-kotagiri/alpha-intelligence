@@ -44,7 +44,6 @@ class TechnicalAnalyst(BaseAgent):
         inval = None
         if t.get("sma_200"):
             inval = f"Daily close below the 200-day moving average (${t['sma_200']:,.2f})"
-        sup = [z for z in (t.get("levels") or []) if z["type"] == "support"]
         if ez.get("justified"):
             inval = f"Daily close below the support zone low (${ez['low']:,.2f})"
         claims = [
@@ -74,7 +73,7 @@ class TechnicalAnalyst(BaseAgent):
         conf = confidence_from(s.coverage, ctx.dq.status)
         summary = (f"Technical score {s.score}/10. Trend short/medium/long: {t['trend_short']}/{t['trend_medium']}/"
                    f"{t['trend_long']}. Entry zone {'justified' if ez.get('justified') else 'not justified'}: "
-                   f"{ez.get('reason') or ('$%.2f–$%.2f' % (ez['low'], ez['high']))}. Volatility risk {risk_level} "
+                   f"{ez.get('reason') or f"${ez['low']:.2f}–${ez['high']:.2f}"}. Volatility risk {risk_level} "
                    f"(ATR {fmt_value(t.get('atr_pct'), 'pct')} of price).")
         tables = {"indicators": {k: t.get(k) for k in ("price", "sma_20", "sma_50", "sma_100", "sma_200", "dist_sma_50",
                                                         "dist_sma_200", "rsi_14", "macd", "macd_signal", "macd_hist", "atr_14",

@@ -19,6 +19,11 @@ test("search, confirm, run, inspect evidence, ask", async ({ page }) => {
   await expect(page.getByText(/Formula|Source/).first()).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  // grounded question about a specific metric
+  await page.locator("table tbody tr").filter({ hasText: "Operating margin (TTM)" }).first().click();
+  await page.getByRole("button", { name: "Ask about this metric" }).first().click();
+  await expect(page.getByRole("tab", { name: "Ask" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".callout.pos").first()).toBeVisible();
   // committee & data quality
   await page.getByRole("tab", { name: "Investment committee" }).click();
   await expect(page.getByText("Devil's Advocate").first()).toBeVisible();
@@ -26,8 +31,9 @@ test("search, confirm, run, inspect evidence, ask", async ({ page }) => {
   await expect(page.getByText("Source retrievals")).toBeVisible();
   // ask (rule-based)
   await page.getByRole("tab", { name: "Ask" }).click();
-  await page.getByRole("button", { name: "What is the strongest reason not to buy?" }).click();
-  await expect(page.locator(".callout.pos")).toBeVisible();
+  await page.getByLabel("Question").fill("What is the strongest reason not to buy?");
+  await page.getByRole("button", { name: "Ask", exact: true }).click();
+  await expect(page.locator(".callout.pos")).toHaveCount(2);
 });
 
 test("no autoplay; briefing transcript visible; stop available", async ({ page }) => {

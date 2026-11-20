@@ -25,6 +25,13 @@ export default function AnalysisPage({ params }: { params: Promise<{ id: string 
   const { events, status } = useEventStream(id, !!running);
   const [tab, setTab] = useState("summary");
   const [watching, setWatching] = useState(false);
+  const [pendingAsk, setPendingAsk] = useState<string | null>(null);
+
+  useEffect(() => {
+    const h = (e: Event) => { setPendingAsk((e as CustomEvent).detail); setTab("ask"); window.scrollTo({ top: 0 }); };
+    window.addEventListener("ii-ask", h);
+    return () => window.removeEventListener("ii-ask", h);
+  }, []);
 
   useEffect(() => {
     if (status === "completed" || status === "failed") reload();
@@ -112,7 +119,7 @@ export default function AnalysisPage({ params }: { params: Promise<{ id: string 
           {tab === "thesis" && <ThesisView r={r} ticker={run.ticker} />}
           {tab === "evidence" && <EvidenceView analysisId={id} />}
           {tab === "quality" && <DataQualityView r={r} />}
-          {tab === "ask" && <AskView analysisId={id} />}
+          {tab === "ask" && <AskView analysisId={id} initial={pendingAsk} />}
           <details className="mt">
             <summary className="small muted" style={{ cursor: "pointer" }}>Research log ({events.length} backend events)</summary>
             <div className="card mt-s"><Timeline events={events} status="completed" /></div>

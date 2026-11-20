@@ -1,0 +1,49 @@
+{
+ "available": true,
+ "observations": 321,
+ "dates": [
+  "2018-06-30",
+  "2019-06-30",
+  "2020-06-30",
+  "2021-06-30",
+  "2022-06-30",
+  "2023-06-30",
+  "2024-06-30",
+  "2025-06-30"
+ ],
+ "terciles": [
+  {
+   "tercile": "low",
+   "n": 110,
+   "mean_excess": 0.2600706900881039,
+   "median_excess": -0.049072698183619035,
+   "hit_rate": 0.44545454545454544
+  },
+  {
+   "tercile": "mid",
+   "n": 105,
+   "mean_excess": -0.006733172428056623,
+   "median_excess": -0.0407134967303906,
+   "hit_rate": 0.45714285714285713
+  },
+  {
+   "tercile": "high",
+   "n": 106,
+   "mean_excess": 0.01225180751860103,
+   "median_excess": -0.0017024322241567802,
+   "hit_rate": 0.49056603773584906
+  }
+ ],
+ "spread_high_minus_low": -0.24781888256950288,
+ "caveats": [
+  "Universe = current S&P 500 constituents: survivorship bias (delisted/removed companies excluded).",
+  "Fundamentals are point-in-time by SEC filing date; prices are split-adjusted vendor data.",
+  "Transaction cost of 10 bps per side deducted; no slippage model.",
+  "Small samples are not statistically significant."
+ ],
+ "sample": {
+  "requested": 60,
+  "loaded": 60,
+  "seed": 7
+ }
+}

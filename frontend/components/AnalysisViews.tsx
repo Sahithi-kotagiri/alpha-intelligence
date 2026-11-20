@@ -174,6 +174,11 @@ export function CommitteeView({ r, analysisId }: { r: any; analysisId: string })
   );
 }
 
+/** Opens the Ask tab with a pre-filled, metric-specific question (grounded in the saved analysis). */
+export function askAbout(q: string) {
+  window.dispatchEvent(new CustomEvent("ii-ask", { detail: q }));
+}
+
 /* ---------------------------------------------------------------- fundamentals */
 const GROUPS: [string, string[]][] = [
   ["Growth", ["revenue_yoy_annual", "revenue_yoy_quarterly", "revenue_cagr_3y", "revenue_cagr_5y", "diluted_eps_yoy_annual", "diluted_eps_yoy_quarterly", "diluted_eps_cagr_3y", "free_cash_flow_yoy_annual"]],
@@ -205,6 +210,7 @@ function AssessmentTable({ items }: { items: any[] }) {
                   <p>{a.explanation}</p>
                   {a.peer && <p className="xs faint">Peer group: {a.peer.group} ({a.peer.level.replace("_", "-")}, n={a.peer.n}); basis: {a.peer.basis}; IQR {byUnit(a.peer.p25, a.unit)}–{byUnit(a.peer.p75, a.unit)}.</p>}
                   {a.absolute && <p className="xs faint">Guardrail: {a.absolute.rule} — {a.absolute.source}</p>}
+                  <button className="btn-sm mt-s" onClick={(e) => { e.stopPropagation(); askAbout(`Explain the ${a.label} assessment (${a.display}): why is it ${a.verdict.replace("_", " ")}, and what would change it?`); }}>Ask about this metric</button>
                 </td></tr>
               )}
             </>
@@ -250,23 +256,23 @@ export function FundamentalsView({ r }: { r: any }) {
         </div>
       </div>
       <div className="grid g2">
-        <ChartFrame title="Revenue" rows={rev} columns={cols([["revenue", "Revenue", money]])} source={src}
+        <ChartFrame title="Revenue" onAsk={() => askAbout("What does the revenue trend show, and is it improving or deteriorating?")} rows={rev} columns={cols([["revenue", "Revenue", money]])} source={src}
           note={latest && by.revenue_yoy_annual ? `Latest annual growth ${by.revenue_yoy_annual.display}; 3-year CAGR ${by.revenue_cagr_3y?.display ?? "n/a"}. Missing periods appear as gaps.` : undefined}>
           <BarsChart data={rev} keys={[{ key: "revenue", label: "Revenue" }]} />
         </ChartFrame>
-        <ChartFrame title="Diluted EPS" rows={eps} columns={cols([["eps", "EPS", (v) => `$${v.toFixed(2)}`]])} source={src}
+        <ChartFrame title="Diluted EPS" onAsk={() => askAbout("What does the diluted eps trend show, and is it improving or deteriorating?")} rows={eps} columns={cols([["eps", "EPS", (v) => `$${v.toFixed(2)}`]])} source={src}
           note={by.diluted_eps_cagr_3y ? `3-year diluted EPS CAGR ${by.diluted_eps_cagr_3y.display}.` : undefined}>
           <BarsChart data={eps} keys={[{ key: "eps", label: "Diluted EPS" }]} unit="USD/share" />
         </ChartFrame>
-        <ChartFrame title="Margins" rows={margins} columns={cols([["gross", "Gross", (v) => pct(v)], ["operating", "Operating", (v) => pct(v)], ["net", "Net", (v) => pct(v)]])} source={src}
+        <ChartFrame title="Margins" onAsk={() => askAbout("What does the margins trend show, and is it improving or deteriorating?")} rows={margins} columns={cols([["gross", "Gross", (v) => pct(v)], ["operating", "Operating", (v) => pct(v)], ["net", "Net", (v) => pct(v)]])} source={src}
           note={by.operating_margin_ttm ? `TTM operating margin ${by.operating_margin_ttm.display} (${by.operating_margin_ttm.verdict} vs peers).` : undefined}>
           <LinesChart data={margins} keys={[{ key: "gross", label: "Gross margin" }, { key: "operating", label: "Operating margin" }, { key: "net", label: "Net margin" }]} />
         </ChartFrame>
-        <ChartFrame title="Operating & free cash flow" rows={cash} columns={cols([["ocf", "Operating CF", money], ["fcf", "Free CF", money]])} source={src}
+        <ChartFrame title="Operating & free cash flow" onAsk={() => askAbout("What does the operating & free cash flow trend show, and is it improving or deteriorating?")} rows={cash} columns={cols([["ocf", "Operating CF", money], ["fcf", "Free CF", money]])} source={src}
           note="Free cash flow = operating cash flow − capital expenditure (calculated).">
           <BarsChart data={cash} keys={[{ key: "ocf", label: "Operating cash flow" }, { key: "fcf", label: "Free cash flow" }]} />
         </ChartFrame>
-        <ChartFrame title="Debt and cash" rows={debt} columns={cols([["debt", "Total debt", money], ["cash", "Cash & ST inv.", money]])} source={src}
+        <ChartFrame title="Debt and cash" onAsk={() => askAbout("What does the debt and cash trend show, and is it improving or deteriorating?")} rows={debt} columns={cols([["debt", "Total debt", money], ["cash", "Cash & ST inv.", money]])} source={src}
           note={by.net_debt_to_ebitda ? `Net debt / EBITDA ${by.net_debt_to_ebitda.display}; interest coverage ${by.interest_coverage?.display ?? "n/a"}.` : undefined}>
           <BarsChart data={debt} keys={[{ key: "debt", label: "Total debt" }, { key: "cash", label: "Cash & short-term investments" }]} />
         </ChartFrame>
@@ -549,13 +555,17 @@ export function ThesisView({ r, ticker }: { r: any; ticker: string }) {
   );
 }
 
-export function AskView({ analysisId }: { analysisId: string }) {
+export function AskView({ analysisId, initial }: { analysisId: string; initial?: string | null }) {
   const [msgs, setMsgs] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
     api(`/analysis/${analysisId}/messages`).then((d: any) => setMsgs(d.messages)).catch(() => {});
   }, [analysisId]);
+  useEffect(() => {
+    if (initial) ask(initial, "text");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial]);
   const ask = async (q: string, mode: "text" | "voice") => {
     setBusy(true);
     setErr(null);

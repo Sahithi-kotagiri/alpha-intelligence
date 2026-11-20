@@ -273,3 +273,14 @@ def test_token_auth_isolation(env, providers, monkeypatch):
         assert c.get("/api/portfolio", headers=hb).json()["portfolios"] == []
         c.post("/api/auth/logout", headers=ha)
         assert c.get("/api/auth/me", headers=ha).status_code == 401
+
+
+def test_alert_preferences_suppress_alerts(client):
+    aid = start(client)
+    wait_for(client, aid)
+    client.post("/api/watchlist", json={"ticker": "TSTA", "alert_prefs": {"thesis": False, "filings": False, "price": False, "earnings": False}})
+    co = client.providers.market.cos["TSTA"]
+    co.op_margin = 0.05
+    out = client.post("/api/monitoring/run").json()
+    assert out["events"] >= 1
+    assert not [a for a in client.get("/api/alerts").json()["alerts"] if a["ticker"] == "TSTA"]

@@ -96,7 +96,6 @@ def compute_valuation(fd: FinancialData | None, snap: MarketSnapshot, metrics: l
     out: list[Metric] = []
     price, mcap = snap.price, snap.market_cap
     period = f"price {snap.price_date}"
-    base_inputs = [snap.price_id]
 
     def add(m: Metric) -> Metric:
         if snap.price_date:

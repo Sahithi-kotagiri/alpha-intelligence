@@ -1,0 +1,14 @@
+# Backend API (FastAPI + background workers). Build: docker build -f Dockerfile.backend -t ii-backend .
+FROM python:3.13-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 UV_COMPILE_BYTECODE=1
+RUN pip install --no-cache-dir uv==0.9.5
+WORKDIR /app
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev --no-install-project
+COPY backend ./backend
+COPY alembic.ini ./
+RUN uv sync --frozen --no-dev && useradd -r -u 10001 app && mkdir -p /app/data && chown -R app /app/data
+USER app
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s CMD python -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/health')"
+CMD [".venv/bin/uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

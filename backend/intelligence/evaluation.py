@@ -170,8 +170,8 @@ def backtest(samples: list[dict[str, Any]], bench: pd.DataFrame, dates: list[dat
         return {"available": False, "reason": "insufficient point-in-time observations"}
     allr = pd.concat(rows)
     g = allr.groupby("tercile", observed=True)["fwd_excess_1y"]
-    res = [{"tercile": str(k), "n": int(v.count()), "mean_excess": float(v.mean()), "hit_rate": float((v > 0).mean())}
-           for k, v in g]
+    res = [{"tercile": str(k), "n": int(v.count()), "mean_excess": float(v.mean()), "median_excess": float(v.median()),
+            "hit_rate": float((v > 0).mean())} for k, v in g]
     return {"available": True, "observations": len(allr), "dates": [d.isoformat() for d in dates], "terciles": res,
             "spread_high_minus_low": res[-1]["mean_excess"] - res[0]["mean_excess"] if len(res) == 3 else None,
             "caveats": ["Universe = current S&P 500 constituents: survivorship bias (delisted/removed companies excluded).",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 
 import pytest
@@ -16,7 +17,18 @@ def _clear_caches():
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'test.db'}")
+    pg = os.environ.get("TEST_DATABASE_URL")
+    if pg:  # e.g. postgresql+psycopg://user@host:port/db — schema is reset for every test
+        from sqlalchemy import create_engine, text
+
+        eng = create_engine(pg)
+        with eng.begin() as c:
+            c.execute(text("DROP SCHEMA public CASCADE"))
+            c.execute(text("CREATE SCHEMA public"))
+        eng.dispose()
+        monkeypatch.setenv("DATABASE_URL", pg)
+    else:
+        monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'test.db'}")
     monkeypatch.setenv("SCHEDULER_ENABLED", "false")
     monkeypatch.setenv("LLM_PROVIDER", "none")
     monkeypatch.setenv("VOICE_PROVIDER", "none")

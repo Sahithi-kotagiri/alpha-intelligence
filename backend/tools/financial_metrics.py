@@ -293,7 +293,6 @@ class FundamentalCalculator:
 
     # ---------------------------------------------------- composite
     def compute(self) -> list[Metric]:
-        fd = self.fd
         for fld, label in [("revenue", "Revenue"), ("diluted_eps", "Diluted EPS"), ("net_income", "Net income"),
                            ("operating_income", "Operating income"), ("operating_cash_flow", "Operating cash flow")]:
             self.growth_series(fld, label)

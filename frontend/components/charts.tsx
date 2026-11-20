@@ -36,9 +36,9 @@ function Tip({ active, payload, label, unit }: any) {
 }
 
 /** Wraps a chart with a title, interpretation note, source/date line and an accessible table view. */
-export function ChartFrame({ title, note, source, rows, columns, children }: {
+export function ChartFrame({ title, note, source, rows, columns, children, onAsk }: {
   title: string; note?: ReactNode; source?: string; rows: Record<string, any>[]; columns: { key: string; label: string; fmt?: (v: any) => string }[];
-  children: ReactNode;
+  children: ReactNode; onAsk?: () => void;
 }) {
   const [table, setTable] = useState(false);
   return (
@@ -64,6 +64,7 @@ export function ChartFrame({ title, note, source, rows, columns, children }: {
       ) : children}
       {note && <figcaption className="chart-note">{note}</figcaption>}
       {source && <div className="xs faint mt-s">{source}</div>}
+      {onAsk && <button className="btn-sm btn-ghost mt-s" onClick={onAsk}>Ask about this chart</button>}
     </figure>
   );
 }

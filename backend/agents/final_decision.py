@@ -43,9 +43,7 @@ class FinalDecisionAgent:
         snap_price = ctx.data_through.get("price")
         fund = ctx.reports.get("fundamental")
         tech = ctx.reports.get("technical")
-        risk = ctx.reports.get("risk_portfolio")
         da = ctx.reports.get("devils_advocate")
-        by = {a.metric_key: a for a in ctx.assessments}
         peer_stats = ctx.peer.get("stats") or {}
         eps_ttm = ctx.data_through.get("eps_ttm")
         fwd = ctx.pack.get("est.eps_next_fy")

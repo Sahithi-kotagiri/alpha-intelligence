@@ -21,11 +21,13 @@ dependencies = [
     "pyyaml>=6.0.3",
     "sse-starlette>=3.7.0",
     "python-multipart>=0.0.34",
+    "psycopg[binary]>=3.3.9",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3,<9.0",
+    "pytest-cov>=7.1.0",
     "ruff>=0.6,<1.0",
 ]
 
@@ -41,5 +43,9 @@ testpaths = ["backend/tests"]
 addopts = "-q"
 
 [tool.ruff]
-line-length = 100
+line-length = 130
 target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "I"]
+ignore = ["B008", "E501", "B023", "B905", "UP038"]  # B008: FastAPI Depends/File/Form defaults

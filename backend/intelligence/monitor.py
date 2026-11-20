@@ -76,7 +76,16 @@ def _event(db, thesis, ticker, etype, title, materiality, dedupe, detail=None, a
     return ev
 
 
+PREF_FOR_KIND = {"thesis_change": "thesis", "filing": "filings", "price": "price", "earnings": "earnings", "price_target": "price"}
+
+
 def _alert(db, user_id, ticker, kind, severity, title, message, detail, ev=None):
+    """Create an alert unless the user's watchlist preferences for this ticker switch that alert type off."""
+    pref = PREF_FOR_KIND.get(kind)
+    if pref and ticker:
+        w = db.scalar(select(M.WatchlistItem).where(M.WatchlistItem.user_id == user_id, M.WatchlistItem.ticker == ticker))
+        if w is not None and (w.alert_prefs or {}).get(pref) is False:
+            return
     db.add(M.Alert(user_id=user_id, ticker=ticker, kind=kind, severity=severity, title=title, message=message,
                    detail=detail, thesis_event_id=ev.id if ev else None))
 
