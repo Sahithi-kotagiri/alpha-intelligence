@@ -91,8 +91,8 @@ def test_rate_limit_retry_and_truncation(monkeypatch):
 
 def test_full_graph_through_openai_compatible_adapter(providers):
     """Every agent, the committee and the final decision run through the adapter over (mock) HTTP."""
-    from backend.tests.test_agents import make_responder, run_graph
     from backend.agents.llm import FakeLLM  # noqa: F401  (responder shared with the agent tests)
+    from backend.tests.test_agents import make_responder, run_graph
 
     responder = make_responder()
     names = []

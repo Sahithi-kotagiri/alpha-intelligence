@@ -27,8 +27,8 @@ from typing import Any
 
 import pandas as pd
 
-from backend.data.providers.sec_edgar import SecEdgarProvider
 from backend.data.provenance import CrossCheck, DataPoint, PeriodType, Quality, SourceType, utcnow
+from backend.data.providers.sec_edgar import SecEdgarProvider
 
 # canonical field -> (label, unit, kind, yfinance rows, sec concepts, abs_value)
 FieldSpec = tuple[str, str, str, list[str], list[str], bool]
