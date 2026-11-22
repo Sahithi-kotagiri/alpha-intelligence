@@ -4,7 +4,7 @@ Convention (METHODOLOGY §10): entry = adjusted close on the decision's price da
 latest price available at decision time; no look-ahead). Horizon N = N trading sessions
 after entry (21/63/126/252 ≈ 1/3/6/12 months). Returns use adjusted closes (dividends
 reinvested: a total-return proxy). Excess = stock − benchmark over the same sessions.
-Hit definitions: Buy Now → excess > 0; Reject → excess < 0; Wait and Watchlist are
+Hit definitions: Strong Buy / Buy (and legacy Buy Now) → excess > 0; Reject → excess < 0; Wait and Watchlist are
 reported but not hit-scored (they are not directional calls on the stock).
 """
 
@@ -98,12 +98,12 @@ def summary(db, user_id: int) -> dict[str, Any]:
             continue
         k = (rec.recommendation, o.horizon_label)
         by.setdefault(k, []).append(o.excess_return)
-        if rec.recommendation == "Buy Now":
+        if rec.recommendation in ("Strong Buy", "Buy", "Buy Now"):
             hits.setdefault(k, []).append(o.excess_return > 0)
         elif rec.recommendation == "Reject":
             hits.setdefault(k, []).append(o.excess_return < 0)
-        q = (rec.scores or {}).get("business_quality")
-        band = "unknown" if q is None else "<5" if q < 5 else "5–7" if q < 7 else "≥7"
+        c = (rec.scores or {}).get("composite")
+        band = "unknown" if c is None else "composite <50" if c < 50 else "composite 50–75" if c < 75 else "composite ≥75"
         bands.setdefault((band, o.horizon_label), []).append(o.excess_return)
         sectors.setdefault((rec.sector or "Unknown", o.horizon_label), []).append(o.excess_return)
         acted.setdefault(rec.user_action, []).append(o.excess_return)
@@ -119,6 +119,6 @@ def summary(db, user_id: int) -> dict[str, Any]:
             "by_user_action": [{"action": k, "n": len(v), "mean_excess": statistics.mean(v)} for k, v in acted.items()],
             "observations_complete": n_complete, "observations_pending": pending,
             "caveats": ["Results are descriptive. With fewer than 30 observations per group no statistical significance is claimed.",
-                        "Hit rate: Buy Now = excess return > 0; Reject = excess return < 0; Wait/Watchlist not hit-scored.",
+                        "Hit rate: Strong Buy/Buy = excess return > 0; Reject = excess return < 0; Wait/Watchlist not hit-scored.",
                         "Returns use adjusted closes from the decision's price date; no transaction costs are deducted here.",
                         "Recommendation quality is confounded by market direction; compare excess, not absolute, returns."]}

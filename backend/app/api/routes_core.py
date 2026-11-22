@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import threading
 from datetime import UTC, datetime
 from typing import Any
@@ -137,6 +138,20 @@ def run_summary(r: M.AnalysisRun) -> dict[str, Any]:
 def screener(request: Request, db: DB, user: CurrentUser):
     U.ensure_universe(db, request.app.state.providers)
     return U.screener_table(db)
+
+
+@router.get("/screener/{ticker}")
+def screener_detail(ticker: str, db: DB, user: CurrentUser):
+    """Rulebook drill-down for one screened constituent: measures, percentile basis, gates, trace, fair value."""
+    from backend.services.rulebook_service import universe_labels
+
+    t = ticker.strip().upper()
+    if not re.fullmatch(r"[A-Z0-9.\-]{1,10}", t):
+        raise HTTPException(422, "invalid ticker")
+    row = universe_labels(db).get(t)
+    if row is None:
+        raise HTTPException(404, f"{t} has no rulebook result yet; run a universe screen")
+    return row
 
 
 @router.post("/screener/run")

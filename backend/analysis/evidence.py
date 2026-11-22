@@ -299,11 +299,12 @@ def build_pack(res: IngestionResult, dq: DataQualityReport, metrics: list[Metric
 
 
 AGENT_SCOPES: dict[str, tuple[str, ...]] = {
-    "fundamental": ("identity", "financial", "metric", "valuation", "assessment", "peer", "estimate", "earnings_history",
+    "valuation": ("identity", "rulebook", "valuation", "metric", "estimate", "peer", "data_quality"),
+    "fundamental": ("identity", "rulebook", "financial", "metric", "valuation", "assessment", "peer", "estimate", "earnings_history",
                     "governance", "data_quality"),
-    "technical": ("identity", "price", "technical", "data_quality"),
-    "news": ("identity", "news", "filing", "analyst_action", "calendar", "estimate", "earnings_history", "data_quality"),
-    "risk_portfolio": ("identity", "risk", "technical", "assessment", "scenario", "portfolio", "price", "data_quality", "governance"),
+    "technical": ("identity", "rulebook", "price", "technical", "data_quality"),
+    "news": ("identity", "rulebook", "news", "filing", "analyst_action", "calendar", "estimate", "earnings_history", "data_quality"),
+    "risk_portfolio": ("identity", "rulebook", "risk", "technical", "assessment", "scenario", "portfolio", "price", "data_quality", "governance"),
 }
 
 

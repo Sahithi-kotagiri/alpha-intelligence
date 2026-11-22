@@ -111,6 +111,8 @@ class ScreenRun(Base):
     succeeded: Mapped[int] = mapped_column(Integer, default=0)
     failed: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text)
+    phase: Mapped[str | None] = mapped_column(String(40))
+    rulebook_version: Mapped[str | None] = mapped_column(String(40))
 
 
 class UniverseSnapshot(Base):
@@ -120,6 +122,7 @@ class UniverseSnapshot(Base):
     screen_run_id: Mapped[int | None] = mapped_column(ForeignKey("screen_runs.id", ondelete="SET NULL"))
     info: Mapped[dict[str, Any]] = mapped_column(JSON)
     metrics: Mapped[dict[str, Any]] = mapped_column(JSON)
+    factors: Mapped[dict[str, Any] | None] = mapped_column(JSON)   # raw rulebook measures (backend/analysis/factors.py)
     status: Mapped[str] = mapped_column(String(20), default="ok")
     error: Mapped[str | None] = mapped_column(Text)
     retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

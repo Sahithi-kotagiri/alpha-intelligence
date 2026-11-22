@@ -36,13 +36,19 @@ class LLMResult(BaseModel):
     output_tokens: int | None = None
     latency_ms: int
     stop_reason: str | None = None
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
 
 
 class LLMClient(Protocol):
+    """`followup` is a short corrective message sent after `user` (e.g. a citation fix); providers that support
+    prompt caching keep `system` + `user` as a cached prefix so the retry re-reads it at cache price."""
+
     provider: str
     model: str
 
-    def structured(self, system: str, user: str, schema: type[T], max_tokens: int | None = None) -> LLMResult: ...
+    def structured(self, system: str, user: str, schema: type[T], max_tokens: int | None = None,
+                   followup: str | None = None) -> LLMResult: ...
 
 
 class AnthropicClient:
@@ -70,14 +76,20 @@ class AnthropicClient:
         self.max_tokens = settings.llm_max_tokens
         self.server_fallback = settings.llm_server_fallback
 
-    def structured(self, system: str, user: str, schema: type[T], max_tokens: int | None = None) -> LLMResult:
+    def structured(self, system: str, user: str, schema: type[T], max_tokens: int | None = None,
+                   followup: str | None = None) -> LLMResult:
         a = self._anthropic
         t0 = time.monotonic()
+        # Prompt caching: the role prompt (stable per agent) and the evidence prompt are separate cache breakpoints.
+        # A corrective retry or a later review question re-reads them from cache instead of paying full input price.
+        content: list[dict[str, Any]] = [{"type": "text", "text": user, "cache_control": {"type": "ephemeral"}}]
+        if followup:
+            content.append({"type": "text", "text": followup})
         kwargs: dict[str, Any] = {
             "model": self.model,
             "max_tokens": max_tokens or self.max_tokens,
-            "system": system,
-            "messages": [{"role": "user", "content": user}],
+            "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+            "messages": [{"role": "user", "content": content}],
             "output_format": schema,
             "output_config": {"effort": self.effort},
             "thinking": {"type": "adaptive"},
@@ -103,7 +115,9 @@ class AnthropicClient:
             raise LLMError("structured output missing or invalid", stop_reason=resp.stop_reason)
         return LLMResult(parsed=parsed, provider=self.provider, model=getattr(resp, "model", self.model),
                          input_tokens=resp.usage.input_tokens, output_tokens=resp.usage.output_tokens,
-                         latency_ms=latency, stop_reason=resp.stop_reason)
+                         latency_ms=latency, stop_reason=resp.stop_reason,
+                         cache_read_tokens=getattr(resp.usage, "cache_read_input_tokens", None),
+                         cache_write_tokens=getattr(resp.usage, "cache_creation_input_tokens", None))
 
 
 class FakeLLM:
@@ -116,7 +130,10 @@ class FakeLLM:
         self.responder = responder
         self.calls: list[dict[str, Any]] = []
 
-    def structured(self, system: str, user: str, schema: type[T], max_tokens: int | None = None) -> LLMResult:
+    def structured(self, system: str, user: str, schema: type[T], max_tokens: int | None = None,
+                   followup: str | None = None) -> LLMResult:
+        if followup:
+            user = user + followup
         self.calls.append({"system": system, "user": user, "schema": schema.__name__})
         out = self.responder(system, user, schema)
         if isinstance(out, Exception):
@@ -184,8 +201,12 @@ class OpenAICompatibleClient:
             return r.json()
         raise LLMError("provider unavailable", retryable=True)
 
-    def structured(self, system: str, user: str, schema: type[T], max_tokens: int | None = None) -> LLMResult:
+    def structured(self, system: str, user: str, schema: type[T], max_tokens: int | None = None,
+                   followup: str | None = None) -> LLMResult:
         import json
+
+        if followup:
+            user = user + followup
 
         from pydantic import ValidationError
 

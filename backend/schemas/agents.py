@@ -106,6 +106,26 @@ class RiskNarrative(BaseModel):
     confidence_reason: str
 
 
+# ------------------------------------------------------------------ Research planning (every analyst, LLM mode)
+class ResearchPlan(BaseModel):
+    focus_evidence_ids: list[str]       # the items this role should examine first (at most ~25)
+    open_questions: list[str]           # what the role needs to find out to reach a view
+    rationale: str
+
+
+# ------------------------------------------------------------------ Valuation
+class ValuationNarrative(BaseModel):
+    executive_assessment: str
+    fair_value_view: Claim
+    market_expectations: Claim          # what growth the current price implies, and whether it is plausible
+    pe_history_view: Claim
+    key_sensitivities: list[Claim]      # which assumption moves fair value most
+    margin_of_safety_view: Claim
+    missing_information: list[str]
+    confidence: Confidence
+    confidence_reason: str
+
+
 # ------------------------------------------------------------------ Devil's Advocate
 class Objection(BaseModel):
     objection: str
@@ -131,6 +151,10 @@ class DevilsAdvocateNarrative(BaseModel):
     overlooked_evidence: list[Claim]
     invalidation_conditions: list[str]
     thesis_failure: ThesisFailureEstimate
+    market_belief: str                  # what the current price says the market believes (cite rb.implied_growth)
+    our_difference: str                 # why our view differs, or "" if it does not
+    difference_credible: bool           # True only if the difference is supported by cited evidence
+    difference_evidence_ids: list[str]
     bear_case_conclusion: str
 
 
@@ -146,7 +170,7 @@ class DisagreementOut(BaseModel):
 
 
 class ReviewQuestion(BaseModel):
-    target_agent: Literal["fundamental", "technical", "news", "risk_portfolio", "devils_advocate"]
+    target_agent: Literal["fundamental", "valuation", "technical", "news", "risk_portfolio", "devils_advocate"]
     question: str
 
 
@@ -156,7 +180,7 @@ class CommitteeNarrative(BaseModel):
     review_questions: list[ReviewQuestion]
     evidence_adjudication: list[Claim]
     unresolved_questions: list[str]
-    chosen_recommendation: Literal["Buy Now", "Wait", "Watchlist", "Reject"]
+    chosen_recommendation: Literal["Strong Buy", "Buy", "Wait", "Watchlist", "Reject"]
     override_reason: str
     rationale: str
     why_not_alternatives: list[str]

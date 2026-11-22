@@ -3,7 +3,7 @@ import { EventRow } from "@/lib/api";
 import { AGENT_TITLES } from "@/lib/format";
 import { Badge } from "./ui";
 
-const AGENTS = ["fundamental", "technical", "news", "risk_portfolio", "devils_advocate"];
+const AGENTS = ["fundamental", "valuation", "technical", "news", "risk_portfolio", "devils_advocate"];
 const STATUS_LABEL: Record<string, string> = {
   queued: "Queued", retrieving_evidence: "Retrieving evidence", analysing: "Analysing", reviewing: "Reviewing",
   completed: "Completed", failed: "Failed",

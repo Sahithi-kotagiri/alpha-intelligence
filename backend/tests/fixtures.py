@@ -63,6 +63,7 @@ class Co:
                  conflict_revenue: bool = False, quote_type: str = "EQUITY", info_overrides: dict | None = None):
         self.ticker, self.name, self.sector, self.sub, self.cik = ticker, name, sector, sub, cik
         self.qends = quarter_ends(24)
+        self.growth_q = growth_q
         self.rev = [rev_q0 * (1 + growth_q) ** i for i in range(24)]
         self.op_margin, self.gross_margin, self.shares = op_margin, gross_margin, shares
         self.debt, self.cash, self.equity = debt, cash, equity
@@ -295,6 +296,29 @@ class FakeMarket:
     def get_earnings_history(self, t):
         return pd.DataFrame({"epsActual": [1.1], "epsEstimate": [1.0], "surprisePercent": [0.1]},
                             index=[pd.Timestamp(TODAY - timedelta(days=60))])
+
+
+    def get_eps_trend(self, t):
+        c = self._co(t)
+        eps = sum(c.q(i)["diluted_eps"] for i in range(20, 24))
+        drift = 1 + c.growth_q  # estimates move with the synthetic growth rate
+        return pd.DataFrame({"current": [eps * 1.05, eps * 1.15], "7daysAgo": [eps * 1.05, eps * 1.15],
+                             "30daysAgo": [eps * 1.05 / drift ** 0.3, eps * 1.15 / drift ** 0.3],
+                             "60daysAgo": [eps * 1.05 / drift ** 0.6, eps * 1.15 / drift ** 0.6],
+                             "90daysAgo": [eps * 1.05 / drift, eps * 1.15 / drift]}, index=["0y", "+1y"])
+
+    def get_prices_batch(self, tickers, period="2y", interval="1d"):
+        out = {}
+        for t in tickers:
+            try:
+                p = self.get_price_history(t)
+            except Exception:
+                continue
+            if interval == "1mo":
+                p = p.resample("ME").last()
+                p["Stock Splits"] = 0.0
+            out[t] = p
+        return out
 
 
 class FakeSEC:

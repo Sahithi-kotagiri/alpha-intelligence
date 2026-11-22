@@ -1,15 +1,15 @@
 # Evaluation report
 
-Generated 2026-11-20. Model/provider: none configured at evaluation time (rule-based mode); configured default
-`claude-opus-5-5` via the Anthropic adapter. Versions: `thresholds-2026.11-v1`, `rubrics-2026.11-v1`,
-`decision-policy-2026.11-v1`, prompts `*-v1` (SHA-256 recorded per model run).
+Updated 2026-11-22. Model/provider: none configured at evaluation time (rule-based mode); configured default
+`claude-opus-5-5` via the Anthropic adapter. Versions: `rulebook-2026.11-v2` (sets the label), `thresholds-2026.11-v1`,
+`rubrics-2026.11-v1`, `decision-policy-2026.11-v1`, prompts `*-v1`/`*-v2` (SHA-256 recorded per model run).
 
 ## 1. Automated tests
 
 | Suite | Result |
 |---|---|
-| Backend unit + integration (`uv run pytest`) | **108 passed**, 1 skipped (live) — SQLite |
-| Backend API + service integration on PostgreSQL 16 (`TEST_DATABASE_URL=… pytest backend/tests/test_api.py backend/tests/test_services_extra.py`) | **29 passed**, 1 skipped (live) |
+| Backend unit + integration (`uv run pytest`) | **128 passed**, 1 skipped (live) — SQLite |
+| Backend API + service integration on PostgreSQL 16 (`TEST_DATABASE_URL=… pytest backend/tests/test_api.py backend/tests/test_services_extra.py`) | **30 passed**, 1 skipped (live); includes migration 0002 |
 | Live provider test (`RUN_LIVE=1`) | **passed** (yfinance, SEC, Wikipedia) |
 | Browser E2E (`cd frontend && npx playwright test --trace off`) on synthetic fixtures | **6 passed** |
 | Fresh clone (`git clone` → `cp .env.example .env` → `uv sync` → start → live MSFT analysis) | **completed** |
@@ -31,6 +31,34 @@ Added after the first local install attempt:
 - The SQLite folder is now created before migrations run on a fresh checkout.
 - An OpenAI-compatible LLM adapter has 7 tests: request shape, fallback from `json_schema` to `json_object`, stripping reasoning tags and code fences, a corrective retry, the invalid-output fallback, rate-limit retry, and a full graph run through it.
 - Monitoring now routes each reassessment trigger to the responsible agent.
+
+Added with the team rulebook (`backend/tests/test_rulebook.py`, 30 tests): every label rule, gates only lowering labels and
+reporting whether they bind, sector percentiles and fallbacks, sparse pillars, not-applicable measures, DCF/reverse-DCF
+inversion and the fade, buy-below, sizing and halving, confidence arithmetic, ROIC/FCF/dilution/leverage from SEC facts,
+financials substitutions, sector-aware leverage, split and vendor-data gates. Agent tests cover the Valuation Analyst,
+research planning (invented evidence IDs rejected), prompt-cache request shape, and the committee never raising the label.
+E2E covers pillar drill-down by keyboard, the Valuation tab, and the screener's label filter and row drill-down.
+
+## 1b. Rulebook on the whole S&P 500 (live, 2026-11-22)
+
+503/503 constituents classified (≈ 4.5 min cold; ≈ 30 s with warm caches), each ranked within its GICS sector:
+
+| Strong Buy | Buy | Wait | Watchlist | Reject | Insufficient data |
+|---|---|---|---|---|---|
+| 1 (TRV) | 2 (MPC, CF) | 22 | 333 | 117 | 28 |
+
+Problems found on live data and fixed before these numbers:
+
+- **8-K item 3.01** fired on listing *transfers* (GM, HLT, KHC) → now a Wait gate ("read the filing"), not Reject.
+- **Fair value** from one peak year overstated cyclicals (SNDK $582 vs $79 price; MU $2,012 vs $595) → two-stage DCF on the 3-year average FCF after SBC (SNDK $130, MU $865); methods differing > 2× are flagged low precision.
+- **SNDK split** (8-for-1 on 2026-11-20) left vendor EPS unadjusted (P/E 0.09) → split and implausible-P/E gates.
+- **Screen vs analysis mismatch:** the screen snapshot lacked debt, cash and EBITDA (SWK: $102 vs $88 fair value) → fixed; regression test added.
+- **Leverage gate** rejected 20 utilities and REITs → sector limits (Utilities 6.5×, Real Estate 8×).
+- **Financials** could never be Strong Buy (no FCF reverse DCF) → earnings-based market-belief check (TRV: price implies −0.3% earnings growth vs 18.5% achieved).
+
+The rulebook is strict by design: about 0.6% of the index qualifies as Strong Buy or Buy today. Quality < 25 (bottom
+quarter of its sector) is an automatic Reject, which accounts for most of the 117. These are team conventions and have
+not been backtested.
 
 ## 2. Live verification (real data, rule-based mode)
 

@@ -1,9 +1,10 @@
-"""Investment Committee: structured review, gates, bounded review loop, policy-constrained decision.
+"""Investment Committee: structured review, gates, bounded review loop, rulebook-constrained decision.
 
-The committee never averages scores. Deterministic rules detect disagreements and apply
-gates; the policy proposes one recommendation from the allowed set. With an LLM, the
-committee may choose another *allowed* recommendation, but only with an evidence-cited
-override reason that is stored alongside the policy recommendation.
+The team rulebook (backend/config/rulebook.yaml) sets the label from four sector-percentile
+pillars, fair value and gates. Deterministic rules detect disagreements between analysts and
+add committee-time gates (unresolved high-severity risks, portfolio limits, no market edge).
+With an LLM, the committee may only *lower* the rulebook label, and only with an
+evidence-cited reason that is stored alongside the rulebook label.
 """
 
 from __future__ import annotations
@@ -17,7 +18,9 @@ from backend.agents.llm import LLMClient, LLMError
 from backend.analysis import decision as D
 from backend.analysis.config_loader import policy
 from backend.analysis.evidence import render_for_prompt
+from backend.analysis.factors import rulebook
 from backend.schemas.agents import CommitteeNarrative
+from backend.services.rulebook_service import assess_subject
 
 
 def scores_from(ctx: AgentContext) -> dict[str, float | None]:
@@ -60,29 +63,32 @@ class InvestmentCommittee:
                 d["resolution"] += f" Review answer: {ans['response'].get('answer')}"
         da_unresolved = da_high - (1 if "Bear case contests bullish analyst views" in resolved_topics else 0)
         unresolved = [d for d in dis if not d["resolved"]]
-        unavailable_dims = sum(len(ctx.scores[k].unavailable_dimensions) for k in ("fundamental_quality", "valuation")
-                               if ctx.scores.get(k)) + (0 if ctx.scores.get("technical") else 1)
-        news_scored = scores["news"] is not None
-        llm_used = any(r.mode == "llm" for r in ctx.reports.values())
-        conf, conf_why = D.confidence(ctx, unavailable_dims, len(dis), len(unresolved), llm_used, news_scored)
-        g = D.gates(ctx, scores, max(da_unresolved, 0), portfolio_breach(ctx), conf)
-        blocked = {b for x in g for b in x["blocks"]}
-        allowed = [r for r in D.RECS if r not in blocked]
-        policy_rec, trace = D.policy_recommendation(scores, blocked)
+        llm_used = llm is not None and any(r.mode == "llm" for r in ctx.reports.values())
+        g = D.rulebook_gates(ctx, max(da_unresolved, 0), portfolio_breach(ctx))
+        rb = assess_subject(ctx.rulebook_raw, ctx.factor_peers, ctx.dq.status, llm_used, g, ctx.bench_vol)
+        label = rb["label"]
+        trace = list(rb["trace"])
+        if label not in D.RECS:  # "Insufficient data": no recommendation possible; shown as Watchlist with the reason
+            trace.append("Too little data to classify: recorded as Watchlist (no buy or reject call is made).")
+            label = "Watchlist"
+        policy_rec = label
+        allowed = D.RECS[D.RECS.index(policy_rec):]  # the committee may only lower the rulebook label, never raise it
+        conf, conf_why = rb["confidence"], rb["confidence_reasons"]
         out: dict[str, Any] = {
             "round": round_no + 1, "scores": scores, "agreements": agreements, "disagreements": dis,
-            "consistency_checks": D.consistency_checks(ctx), "gates": g, "allowed": allowed,
+            "consistency_checks": D.consistency_checks(ctx), "gates": rb["gates"], "allowed": allowed,
             "policy_recommendation": policy_rec, "policy_trace": trace, "recommendation": policy_rec,
             "overridden": False, "override_reason": "", "confidence": conf, "confidence_explanation": conf_why,
             "review_questions": [], "unresolved_questions": [d["description"] for d in unresolved],
-            "mode": "deterministic", "why_not_alternatives": self._why_not(policy_rec, scores, g),
-            "rationale": " ".join(trace), "evidence_adjudication": [], "limitations": [],
+            "mode": "deterministic", "why_not_alternatives": self._why_not(policy_rec, rb),
+            "rationale": " ".join(trace), "evidence_adjudication": [], "limitations": [], "rulebook": rb,
+            "insufficient_data": rb["label"] not in D.RECS,
         }
         max_rounds = policy()["review_loop"]["max_rounds"]
         if llm is None:
             if round_no == 0 and det_qs:
                 out["review_questions"] = det_qs[: policy()["review_loop"]["max_questions_per_round"]]
-            emit("committee", "completed", f"Committee round {round_no + 1}: policy recommendation {policy_rec} "
+            emit("committee", "completed", f"Committee round {round_no + 1}: rulebook label {policy_rec} "
                  f"({len(dis)} disagreement(s), {len(g)} gate(s))", agent="committee")
             return out
         # ---- LLM committee
@@ -96,7 +102,10 @@ class InvestmentCommittee:
         user = (f"Company: {ctx.company_name} ({ctx.ticker}); horizon {ctx.params.get('horizon')}; benchmark {ctx.params.get('benchmark')}.\n"
                 f"Data through: {json.dumps(ctx.data_through, default=str)}\n\nAnalyst reports:\n{reports}\n\n"
                 f"Rule-detected disagreements: {json.dumps(dis)}\nDecision gates: {json.dumps(g)}\n"
-                f"ALLOWED recommendations: {allowed}\nPolicy recommendation: {policy_rec} — trace: {trace}\n"
+                f"Rulebook pillars (0–100 sector percentiles): {json.dumps({k: v['score'] for k, v in rb['pillars'].items()})}; "
+                f"composite {rb['composite']}; fair value {rb['fair_value']}; buy-below {rb['buy_below']}; price {rb['price']}\n"
+                f"ALLOWED recommendations (rulebook label and below; you may lower it, never raise it): {allowed}\n"
+                f"Rulebook recommendation: {policy_rec} — trace: {trace}\n"
                 f"Confidence (rule-based): {conf:.0%} — {conf_why}\nPrevious review rounds: {json.dumps(review_log, default=str)}\n"
                 f"Review rounds remaining after this one: {max(0, max_rounds - round_no - 1)}\n\n"
                 f"Key evidence:\n{render_for_prompt(key_ev)}")
@@ -113,7 +122,7 @@ class InvestmentCommittee:
                                    "stop_reason": res.stop_reason, "guardrail_violations": bad})
             chosen = data["chosen_recommendation"]
             if chosen not in allowed:
-                out["limitations"].append(f"LLM chose {chosen}, which is blocked by a gate; policy recommendation kept.")
+                out["limitations"].append(f"LLM chose {chosen}, which is above the rulebook label or blocked by a gate; rulebook label kept.")
                 chosen = policy_rec
             out.update(mode="llm", agreements=data["agreements"] or agreements,
                        disagreements=data["disagreements"] + [d for d in dis if d["topic"] not in {x["topic"] for x in data["disagreements"]}],
@@ -142,22 +151,24 @@ class InvestmentCommittee:
         return out
 
     @staticmethod
-    def _why_not(rec: str, scores: dict[str, float | None], g: list[dict[str, Any]]) -> list[str]:
-        q, v, t, r = (scores.get(k) for k in ("quality", "valuation", "technical", "risk"))
-        th = policy()["thresholds"]
+    def _why_not(rec: str, rb: dict[str, Any]) -> list[str]:
+        L = rulebook()["labels"]
+        p = {k: v["score"] for k, v in rb["pillars"].items()}
+        comp, pvf = rb["composite"], rb.get("price_vs_fair")
+        pv = "n/a" if pvf is None else f"{pvf:.2f}"
+        caps = [f"{g['id']} (≤ {g['effect']})" for g in rb["gates"]]
         out = []
-        blocked_buy = [x["reason"] for x in g if "Buy Now" in x["blocks"]]
-        if rec != "Buy Now":
-            out.append("Buy Now: " + ("; ".join(blocked_buy) if blocked_buy else
-                                      f"thresholds not met (quality {q}, valuation {v}, technical {t}, risk {r} vs minimums "
-                                      f"{th['buy_now']})."))
+        if rec != "Strong Buy":
+            out.append(f"Strong Buy: needs composite ≥ {L['strong_buy']['composite_min']} (is {comp}), every pillar ≥ "
+                       f"{L['strong_buy']['every_pillar_min']} (lowest {min(p.values()):.0f}), price ≤ fair value (ratio {pv})"
+                       + (f"; gates: {', '.join(caps)}" if caps else "") + ".")
+        if rec not in ("Strong Buy", "Buy"):
+            out.append(f"Buy: needs composite ≥ {L['buy']['composite_min']}, no pillar < {L['buy']['no_pillar_below']}, "
+                       f"price ≤ fair value × {L['buy']['price_vs_fair_max']} (ratio {pv}).")
         if rec != "Wait":
-            out.append(f"Wait: requires business quality ≥ {th['wait']['quality_min']} with entry conditions unmet"
-                       + (" (Buy Now conditions were met)." if rec == "Buy Now" else f"; quality is {q}."))
-        if rec != "Watchlist":
-            out.append("Watchlist: used when the case is neither strong enough to wait for entry nor weak enough to reject; "
-                       f"not chosen because the {rec} rule applied first.")
+            out.append(f"Wait: for quality ≥ {L['wait']['quality_min']} (is {p['quality']:.0f}) held back by price, value or "
+                       "momentum.")
         if rec != "Reject":
-            out.append(f"Reject: requires quality ≤ {th['reject']['quality_max']} or high risk with weak quality; quality is {q}, "
-                       f"risk score {r}.")
+            out.append(f"Reject: composite < {L['reject']['composite_below']} or quality < {L['reject']['quality_below']}, or "
+                       "a red-flag gate (is composite " f"{comp}, quality {p['quality']:.0f}).")
         return out

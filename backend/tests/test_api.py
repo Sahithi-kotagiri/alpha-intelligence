@@ -35,10 +35,15 @@ def test_full_journey(client):
     run = wait_for(client, aid)
     assert run["status"] == "completed", run.get("error")
     res = run["result"]
-    assert res["final"]["recommendation"] in ("Buy Now", "Wait", "Watchlist", "Reject")
+    assert res["final"]["recommendation"] in ("Strong Buy", "Buy", "Wait", "Watchlist", "Reject")
     assert 0 < res["final"]["confidence"] <= 0.9
     assert res["mode"] == "deterministic"
-    assert set(res["reports"]) == {"fundamental", "technical", "news", "risk_portfolio", "devils_advocate"}
+    assert set(res["reports"]) == {"fundamental", "valuation", "technical", "news", "risk_portfolio", "devils_advocate"}
+    rb = res["final"]["rulebook"]
+    assert set(rb["pillars"]) == {"quality", "value", "momentum", "revisions"} and 0 <= rb["composite"] <= 100
+    assert rb["version"].startswith("rulebook-") and res["final"]["meta"]["versions"]["rulebook"] == rb["version"]
+    assert rb["confidence_reasons"] and "what_would_change" in rb and rb["data_date"]
+    assert any(e.startswith("rb.") for e in res["evidence"]) if isinstance(res.get("evidence"), dict) else True
     assert res["data_quality"]["status"] in ("good", "acceptable")
     assert res["final"]["meta"]["versions"]["thresholds"].startswith("thresholds-")
     # events: real, ordered, terminal
@@ -59,7 +64,7 @@ def test_full_journey(client):
     mets = client.get(f"/api/analysis/{aid}/metrics").json()
     assert any(m["key"] == "peg_forward" for m in mets["metrics"])
     agents = client.get(f"/api/analysis/{aid}/agents").json()["agents"]
-    assert len(agents) == 5
+    assert len(agents) == 6
     # briefing derived from saved report
     b = client.get(f"/api/analysis/{aid}/briefing").json()
     assert [s["title"] for s in b["sections"]][0] == "Recommendation" and "not a probability of profit" in b["text"]
@@ -106,7 +111,7 @@ def test_failed_provider_is_reported_and_retryable(client):
     assert run["status"] == "completed"
     f = run["result"]["final"]
     assert run["result"]["data_quality"]["status"] == "critical"
-    assert "Buy Now" not in f["allowed_recommendations"]
+    assert not {"Strong Buy", "Buy"} & set(f["allowed_recommendations"])
     assert run["result"]["data_quality"]["failed_sources"]
     client.providers.market.fail.discard("TSTC")
 
@@ -177,8 +182,9 @@ def test_thesis_monitoring_detects_change_and_reassesses(client):
     assert {i["agent"] for i in re_["items"]} >= {"fundamental", "news"}
     fund = new["result"]["reports"]["fundamental"]
     assert any(c["text"].startswith("Reassessment trigger") for c in fund["claims"])
-    # the reassessment cannot recommend Buy Now with an unresolved 4.02 non-reliance filing
-    assert "Buy Now" not in new["result"]["final"]["allowed_recommendations"]
+    # an 8-K 4.02 non-reliance filing within 90 days is a red-flag gate: the reassessment must Reject
+    assert new["result"]["final"]["recommendation"] == "Reject"
+    assert any(g["id"] == "red_flag_filing" for g in new["result"]["final"]["gates"])
     # second run: no duplicate events / no new reassessment within cooldown
     out2 = client.post("/api/monitoring/run").json()
     assert not out2["reassessments"]

@@ -40,7 +40,7 @@ cd frontend && npm ci && npx next build && npx next start -p 3000
 ```
 
 Open http://localhost:3000, choose **New analysis**, search a company, confirm it, and start. Progress shown is the real
-backend state. Use **S&P 500 screener → Refresh universe metrics** once (about 1 minute) to screen all constituents.
+backend state. Use **S&P 500 screener → Refresh universe** once (about 10–15 minutes) to classify all constituents with the rulebook; analyses then rank each company against its sector peers.
 
 ## How it works
 
@@ -55,10 +55,15 @@ backend state. Use **S&P 500 screener → Refresh universe metrics** once (about
    - Each is judged against its GICS sub-industry peers (with per-metric fallback to sector or universe), sourced guardrails such as PEG ≈ 1 and Altman zones, and business-type rules for banks, REITs, utilities, growth, cyclical, unprofitable and negative-equity companies.
    - Every verdict comes with a written explanation. See `docs/METHODOLOGY.md`.
 3. **Agents (LangGraph):**
-   - Fundamental, Technical, News & Sentiment, and Risk & Portfolio run in parallel, then the Devil's Advocate, then the Investment Committee with a bounded review loop, then the Final Decision.
+   - Five analysts run in parallel: Fundamental, Valuation, Technical, News & Estimates, and Risk & Portfolio. Then the Devil's Advocate, then the Investment Committee with a bounded review loop, then the Final Decision.
+   - With an LLM, each analyst first plans its research (chooses which evidence to examine), then interprets it. The default model is Claude Opus 5.5 (`claude-opus-5-5`) with adaptive thinking, structured outputs, prompt caching and server-side refusal fallback; any OpenAI-compatible model also works.
    - Agents cite only evidence IDs they were given; guardrails remove invalid citations and flag unverified numbers.
    - Without an LLM, every agent produces a clearly labelled rule-based report.
-4. **Decision:** exactly one of Buy Now / Wait / Watchlist / Reject, chosen through explicit gates and a documented policy, never an average. Confidence reflects evidence sufficiency, not the probability of profit.
+4. **Decision (team rulebook, `backend/config/rulebook.yaml`):**
+   - Four equal pillars scored as sector percentiles: Quality (5-year ROIC, its stability, FCF conversion after SBC), Value (FCF yield, achieved vs price-implied growth, P/E vs own history), Momentum (12-1 month return, 200-day trend) and Revisions (90-day EPS revisions, earnings surprises).
+   - Labels: Strong Buy / Buy / Wait / Watchlist / Reject. Gates (red-flag filings, leverage with negative FCF, dilution, falling estimates in a downtrend, portfolio limits, unresolved risks) can only lower a label.
+   - Fair value (DCF + own-history P/E), buy-below price, and position size (5% / 3%, halved for high volatility or drawdown).
+   - Confidence reflects evidence quality, not the probability of profit.
 5. **After the decision:**
    - The thesis is saved as monitorable assumptions with materiality bands.
    - Scheduled monitoring records events and alerts and starts a versioned reassessment on material change.
@@ -72,12 +77,12 @@ backend/
   data/           providers (yfinance, SEC EDGAR, S&P 500), cache, normalisation, validation, ingestion
   tools/          deterministic metrics, valuation, technicals, risk, portfolio, scenarios
   analysis/       peers, classification, thresholds/assessment, scoring, evidence pack, decision rules
-  agents/         LLM adapter, guardrails, five agents, committee, final decision
+  agents/         LLM adapter, guardrails, six agents, committee, final decision
   orchestration/  LangGraph workflow and compute stage
   intelligence/   thesis, monitoring, performance, evaluation/backtest
   services/       jobs, events, universe/screener, assistant, briefing, compare
   voice/          speech provider adapters
-  config/         thresholds.yaml, rubrics.yaml, decision_policy.yaml (versioned)
+  config/         rulebook.yaml (sets the label), thresholds.yaml, rubrics.yaml, decision_policy.yaml (versioned)
   prompts/        versioned agent prompts
   database/       models, session, Alembic migrations
   tests/          unit, agent, API tests and synthetic fixtures

@@ -34,4 +34,5 @@ def policy() -> dict[str, Any]:
 
 
 def versions() -> dict[str, str]:
-    return {"thresholds": thresholds()["version"], "rubrics": rubrics()["version"], "decision_policy": policy()["version"]}
+    return {"rulebook": load("rulebook")["version"], "thresholds": thresholds()["version"], "rubrics": rubrics()["version"],
+            "decision_policy": policy()["version"]}

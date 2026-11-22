@@ -35,7 +35,7 @@ def rule_objections(ctx: AgentContext) -> list[dict[str, Any]]:
                     "evidence_ids": [f"asm.{a.metric_key}" for a in v],
                     "mechanism": "If growth or margins disappoint, the multiple can compress toward the peer median, causing "
                                  "losses even if the business performs adequately.",
-                    "likelihood": "medium", "severity": "high" if len(v) >= 2 else "medium",
+                    "likelihood": "medium", "severity": "medium",  # high severity comes from price vs fair value (rulebook)
                     "what_would_weaken_it": "Earnings growth that brings multiples back toward peer medians, or a lower price.",
                     "verify_before_deciding": "Whether consensus growth is credible given recent quarterly growth and guidance."})
     gp = unf("revenue_yoy_quarterly", "revenue_yoy_annual", "diluted_eps_yoy_quarterly", "revenue_cagr_3y")
@@ -158,6 +158,55 @@ def rule_objections(ctx: AgentContext) -> list[dict[str, Any]]:
     return obj
 
 
+def market_belief(ctx: AgentContext) -> dict[str, Any]:
+    """Rulebook question: what does the market believe, and why are we different? (deterministic answer)"""
+    rb = ctx.rulebook or {}
+    ig, g = rb.get("implied_growth"), rb.get("revenue_cagr")
+    rev = ((rb.get("pillars") or {}).get("revisions") or {}).get("score")
+    if ig is None:
+        return {"market_belief": "Not measurable: no positive free cash flow after SBC for a reverse DCF.",
+                "our_difference": "", "difference_credible": False, "difference_evidence_ids": []}
+    basis = (rb.get("detail") or {}).get("achieved_growth_label") or "revenue"
+    what = "earnings" if basis == "net income" else "free-cash-flow"
+    belief = f"The price implies roughly {ig * 100:.1f}% annual {what} growth for ten years."
+    if g is None:
+        return {"market_belief": belief, "our_difference": "", "difference_credible": False,
+                "difference_evidence_ids": ["rb.implied_growth"]}
+    if g > ig and (rev is None or rev >= 50):
+        diff = (f"The company has grown {basis} {g * 100:.1f}% a year, above what is priced in"
+                + (f", and analysts are raising estimates (revisions pillar {rev:.0f})." if rev is not None else "."))
+        return {"market_belief": belief, "our_difference": diff, "difference_credible": True,
+                "difference_evidence_ids": ["rb.implied_growth", "rb.revenue_cagr", "rb.pillar.revisions"]}
+    why = (f"achieved {basis} growth {g * 100:.1f}% does not exceed it" if g <= ig else
+           f"estimates are not rising (revisions pillar {rev:.0f})")
+    return {"market_belief": belief, "our_difference": f"No evidence-backed edge: {why}.", "difference_credible": False,
+            "difference_evidence_ids": ["rb.implied_growth", "rb.revenue_cagr"]}
+
+
+def rulebook_objections(ctx: AgentContext) -> list[dict[str, Any]]:
+    rb = ctx.rulebook or {}
+    out = []
+    for name, p in (rb.get("pillars") or {}).items():
+        if p["score"] < 25 and not p["sparse"]:
+            weak = [m for m in p["measures"] if m.get("score") is not None and m["score"] < 30]
+            out.append({"objection": f"{name.title()} pillar is in the bottom quarter of its sector ({p['score']:.0f}/100): "
+                                     + "; ".join(m["label"] for m in weak[:3]) + ".",
+                        "evidence_ids": [f"rb.pillar.{name}"] + [f"rb.m.{m['key']}" for m in weak[:3]],
+                        "mechanism": "A bottom-quartile pillar means peers offer the same exposure on better terms.",
+                        "likelihood": "high", "severity": "high" if name == "quality" else "medium",
+                        "what_would_weaken_it": f"The {name} measures recovering above the sector median.",
+                        "verify_before_deciding": "Whether the weakness is temporary (one-off) or structural."})
+    pvf = rb.get("price_vs_fair")
+    if pvf and pvf > 1.2:
+        out.append({"objection": f"Price is {pvf - 1:.0%} above the rulebook fair value.",
+                    "evidence_ids": ["rb.fair_value", "rb.price_vs_fair"],
+                    "mechanism": "Paying above fair value needs growth beyond the company's record to earn a return.",
+                    "likelihood": "medium", "severity": "high" if pvf > 1.5 else "medium",
+                    "what_would_weaken_it": "Faster growth than history, or a lower price.",
+                    "verify_before_deciding": "Whether the growth implied by the price is realistic."})
+    return out
+
+
 def latest_metric_val(ctx: AgentContext, key: str) -> float | None:
     for i in ctx.pack.by_category("metric"):
         if i.detail.get("key") == key and i.value is not None:
@@ -176,7 +225,7 @@ class DevilsAdvocate(BaseAgent):
         return [i for i in ctx.pack.items.values() if not (i.category == "financial" and "Q" in i.id.split(".")[-1][:1])]
 
     def deterministic(self, ctx: AgentContext) -> dict[str, Any]:
-        obj = rule_objections(ctx)
+        obj = rulebook_objections(ctx) + rule_objections(ctx)
         high = [o for o in obj if o["severity"] == "high"]
         weaknesses = [Claim(text=o["objection"], kind="interpretation", evidence_ids=o["evidence_ids"]) for o in obj]
         inval = []
@@ -198,7 +247,9 @@ class DevilsAdvocate(BaseAgent):
                                      "estimate": None,
                                      "basis": "Not estimated in rule-based mode: no calibrated model exists, and an "
                                               "uncalibrated number would imply false precision."},
-                  "high_severity_count": len(high)}
+                  "high_severity_count": len(high), **market_belief(ctx),
+                  "top_risks": sorted(obj, key=lambda o: ({"high": 0, "medium": 1, "low": 2}[o["severity"]],
+                                                          {"high": 0, "medium": 1, "low": 2}[o["likelihood"]]))[:3]}
         conf = ("Medium", "Objections follow documented rules over the evidence pack.")
         return {"score": None, "summary": summary, "weaknesses": weaknesses, "claims": [], "missing": [],
                 "tables": tables, "confidence": conf}
@@ -225,5 +276,12 @@ class DevilsAdvocate(BaseAgent):
         report.deterministic["thesis_failure"] = tf
         report.deterministic["high_severity_count"] = sum(1 for o in n.get("objections", [])
                                                           if o["severity"] == "high" and o["likelihood"] != "low")
+        for k in ("market_belief", "our_difference", "difference_credible", "difference_evidence_ids"):
+            if k in n:
+                report.deterministic[k] = n[k]
+        if n.get("difference_credible") and not n.get("difference_evidence_ids"):
+            report.deterministic["difference_credible"] = False  # a claimed edge must be evidenced
+        report.deterministic["top_risks"] = sorted(n.get("objections", []), key=lambda o: (
+            {"high": 0, "medium": 1, "low": 2}[o["severity"]], {"high": 0, "medium": 1, "low": 2}[o["likelihood"]]))[:3]
         report.confidence = "Medium"
         report.confidence_reason = "Bear case grounded in cited evidence; probability range is uncalibrated."

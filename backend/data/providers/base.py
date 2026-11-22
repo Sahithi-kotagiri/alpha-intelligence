@@ -79,6 +79,10 @@ class MarketDataProvider(Protocol):
 
     def get_earnings_history(self, ticker: str) -> pd.DataFrame: ...
 
+    def get_eps_trend(self, ticker: str) -> pd.DataFrame: ...
+
+    def get_prices_batch(self, tickers: list[str], period: str = "2y", interval: str = "1d") -> dict[str, pd.DataFrame]: ...
+
 
 class FilingsProvider(Protocol):
     name: str

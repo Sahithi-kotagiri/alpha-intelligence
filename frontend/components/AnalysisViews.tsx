@@ -8,6 +8,7 @@ import { Badge, Card, Cites, EvidenceCard, ErrorBox, Loading, RecBadge, ScoreBar
 import { BarsChart, ChartFrame, LinesChart, mergeSeries, RefBars, ScenarioChart, CorrelationTable } from "./charts";
 import PriceChart from "./PriceChart";
 import { AskBox, BriefingPlayer } from "./Voice";
+import { PillarBar, PriceLadder, RulebookDecision } from "./Rulebook";
 
 function Claims({ items }: { items?: any[] }) {
   if (!items?.length) return <p className="muted small">None recorded.</p>;
@@ -37,6 +38,7 @@ export function SummaryView({ r, analysisId }: { r: any; analysisId: string }) {
           <li key={i}>{x.title} <span className="faint">→ reassessed by {AGENT_TITLES[x.agent] || x.agent}</span></li>))}</ul>
       </div>
     )}
+    <RulebookDecision rb={f.rulebook} />
     <div className="grid g2">
       <Card title="Executive summary" sub={f.mode === "llm" ? "Written by the final-decision agent from the committee record" : "Generated from rule-based committee output"}>
         <p className="serif" style={{ fontSize: 15, lineHeight: 1.6 }}>{f.executive_summary}</p>
@@ -46,7 +48,7 @@ export function SummaryView({ r, analysisId }: { r: any; analysisId: string }) {
         <Claims items={f.thesis} />
       </Card>
       <div className="stack">
-        <Card title="Scores" sub={f.scores.direction}>
+        <Card title="Agent diagnostic scores" sub="0–10 per analyst; the decision uses the rulebook pillars above">
           <div className="stack">
             <ScoreBar label="Business quality" score={f.scores.business_quality} />
             <ScoreBar label="Valuation (vs peers, growth, own history)" score={f.scores.valuation} />
@@ -54,7 +56,7 @@ export function SummaryView({ r, analysisId }: { r: any; analysisId: string }) {
             <ScoreBar label="News & sentiment" score={f.scores.news} />
             <ScoreBar label={`Risk (rating: ${f.scores.risk_rating})`} score={f.scores.risk} />
           </div>
-          <p className="xs faint mt">Scores are diagnostic inputs under documented rubrics ({f.meta.versions.rubrics}); the decision applies explicit gates, not an average.</p>
+          <p className="xs faint mt">Diagnostic scores under documented rubrics ({f.meta.versions.rubrics}). The label comes from the rulebook ({f.meta.versions.rulebook}).</p>
         </Card>
         <Card title="Top risks">
           {f.risks?.length ? f.risks.map((x: any, i: number) => (
@@ -63,7 +65,7 @@ export function SummaryView({ r, analysisId }: { r: any; analysisId: string }) {
           )) : <p className="muted small">No rule-based risk flagged.</p>}
         </Card>
       </div>
-      <Card title="Entry price & allocation">
+      <Card title="Entry & allocation detail">
         <dl className="kv">
           <dt>Suggested entry</dt><dd>{f.entry_price.text}</dd>
           <dt>Method</dt><dd className="small">{f.entry_price.methods?.length ? <ul className="clean">{f.entry_price.methods.map((m: string) => <li key={m}>{m}</li>)}</ul> : "—"}</dd>
@@ -147,7 +149,7 @@ function AgentRow({ rep, analysisId }: { rep: any; analysisId: string }) {
 
 export function CommitteeView({ r, analysisId }: { r: any; analysisId: string }) {
   const c = r.committee;
-  const order = ["fundamental", "technical", "news", "risk_portfolio", "devils_advocate"];
+  const order = ["fundamental", "valuation", "technical", "news", "risk_portfolio", "devils_advocate"];
   return (
     <div className="stack" style={{ gap: 16 }}>
       <div>{order.filter((a) => r.reports[a]).map((a) => <AgentRow key={a} rep={r.reports[a]} analysisId={analysisId} />)}</div>
@@ -336,6 +338,56 @@ function AllMetrics({ analysisId }: { analysisId: string }) {
 }
 
 /* ---------------------------------------------------------------- technical */
+export function ValuationView({ r, analysisId }: { r: any; analysisId: string }) {
+  const rep = r.reports.valuation;
+  const rb = r.final.rulebook;
+  if (!rep || !rb) return <p className="muted">No valuation report in this analysis version.</p>;
+  const t = rep.deterministic || {};
+  const value = rb.pillars?.value;
+  return (
+    <div className="stack" style={{ gap: 16 }}>
+      <AgentRow rep={rep} analysisId={analysisId} />
+      <div className="grid g2">
+        <Card title="Fair value and buy-below" sub="Mean of a 10-year DCF on FCF after stock pay and TTM EPS × the company's own median P/E">
+          <PriceLadder price={rb.price} fair={rb.fair_value} buyBelow={rb.buy_below} date={rb.data_date} />
+          <table className="mt"><tbody>
+            {(t.methods || []).map((m: any) => <tr key={m.method}><td className="small">{m.method}</td><td className="r num">${m.value.toFixed(2)}</td></tr>)}
+          </tbody></table>
+          <p className="xs faint mt-s">Discount rate 9%, terminal growth 2.5%, growth = 5-year revenue CAGR capped to −5%…20%. Buy-below = fair value × 0.85 (× 0.90 when quality ≥ 90).</p>
+        </Card>
+        <Card title="What the price implies" sub="Reverse DCF: the growth that justifies today's enterprise value">
+          <GrowthCompare implied={t.implied_growth} achieved={t.revenue_cagr} />
+          <p className="small mt-s">{rb.market_belief}</p>
+          {rb.our_difference && <p className="small muted">{rb.our_difference}</p>}
+        </Card>
+      </div>
+      {value && <Card title="Value pillar" sub={`Score ${Math.round(value.score)}/100 vs sector`}>
+        <table className="measures"><tbody>{value.measures.map((m: any) => (
+          <tr key={m.key}><td className="small">{m.label}</td><td className="r num">{m.value === null || m.value === undefined ? "—" : m.unit === "pct" ? pct(m.value) : m.value.toFixed(2)}</td>
+            <td style={{ width: "40%" }}>{m.score !== null && m.score !== undefined ? <PillarBar score={m.score} compact /> : <span className="xs faint">{m.reason}</span>}</td>
+            <td className="r num small">{m.score !== null && m.score !== undefined ? Math.round(m.score) : ""}</td></tr>))}</tbody></table>
+      </Card>}
+    </div>
+  );
+}
+
+function GrowthCompare({ implied, achieved }: { implied?: number | null; achieved?: number | null }) {
+  if (implied === null || implied === undefined) return <p className="muted small">Not measurable: free cash flow after stock-based pay is not positive.</p>;
+  const vals = [implied, achieved ?? 0];
+  const max = Math.max(0.05, ...vals.map((v) => Math.abs(v)));
+  const bar = (v: number, cls: string, label: string) => (
+    <div className="row" style={{ gap: 10 }}>
+      <span className="small" style={{ width: 132 }}>{label}</span>
+      <div className="pbar" style={{ height: 12 }}><span className={`pbar-fill ${cls}`} style={{ width: `${Math.max(2, (Math.abs(v) / max) * 100)}%`, opacity: v < 0 ? 0.5 : 1 }} /></div>
+      <span className="num" style={{ width: 58, textAlign: "right" }}>{pct(v)}</span>
+    </div>);
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      {bar(implied, "t-warn", "Priced in (10y FCF)")}
+      {achieved !== null && achieved !== undefined && bar(achieved, achieved >= implied ? "t-pos" : "t-neg", "Achieved (revenue)")}
+    </div>);
+}
+
 export function TechnicalView({ r }: { r: any }) {
   const t = r.technicals;
   const rep = r.reports.technical;

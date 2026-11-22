@@ -34,7 +34,7 @@ def _a(assessments: list[Assessment], key: str) -> Assessment | None:
 
 
 def extract(assessments: list[Assessment], technicals: dict[str, Any] | None, qualitative: list[str] | None = None,
-            moat: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+            moat: dict[str, Any] | None = None, rulebook: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
 
     def add(key, desc, metric, comp, thr, rev, orig, unit, mat, ev, inval):
@@ -79,6 +79,17 @@ def extract(assessments: list[Assessment], technicals: dict[str, Any] | None, qu
         add("trend", f"Long-term price trend holds (price {fmt_value(d, 'pct')} vs 200-day average)", "dist_sma_200", ">=",
             min(-0.10, d - 0.15), min(-0.05, d - 0.08), d, "pct", "low", ["tech.dist_sma_200"],
             "Price more than 10% below the 200-day average")
+    # rulebook review triggers: a close below the 200-day average, and consensus EPS falling over two months
+    if technicals and technicals.get("dist_sma_200") is not None and technicals["dist_sma_200"] > 0:
+        d = technicals["dist_sma_200"]
+        add("rb_trend_200", f"Price stays above its 200-day average (now {fmt_value(d, 'pct')} above; rulebook review trigger)",
+            "dist_sma_200", ">=", -0.02, 0.0, d, "pct", "medium", ["tech.dist_sma_200", "rb.m.trend_200"],
+            "Close below the 200-day average")
+    rev60 = ((rulebook or {}).get("detail") or {}).get("eps_rev_60d")
+    if rev60 is not None:
+        add("rb_estimates", f"Consensus EPS not falling over two months (now {fmt_value(rev60, 'pct')} vs 60 days ago; "
+            "rulebook review trigger)", "eps_rev_60d", ">=", min(rev60, 0.0) - 0.02, min(rev60, 0.0), rev60, "pct", "medium",
+            ["rb.m.eps_rev_90d"], "Consensus EPS more than 2% lower than two months earlier")
     if moat and moat.get("rating") in ("narrow", "wide"):
         out.append({"key": "moat", "description": f"Competitive position remains durable (moat rated {moat['rating']} by analyst)",
                     "kind": "qualitative", "metric_key": None, "comparator": None, "threshold": None, "review_threshold": None,

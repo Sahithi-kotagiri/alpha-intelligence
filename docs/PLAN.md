@@ -10,14 +10,18 @@ Next.js (app router, TypeScript)  ── pages, charts, voice UI; no investment 
    │ same-origin /api/* → runtime proxy route (streams SSE)
 FastAPI ── auth, validation, background JobRunner (thread pool), scheduler (monitoring, performance)
    │
-LangGraph workflow:  ingest → validate → compute ─┬─ fundamental ─┐
-                                                  ├─ technical ───┤
-                                                  ├─ news ────────┼→ devil's advocate → committee ⇄ review (≤2 rounds) → final → thesis
-                                                  └─ risk/portfolio┘
+LangGraph workflow:  ingest → validate → compute (+ rulebook factors) ─┬─ fundamental ──────┐
+                                                                       ├─ valuation ────────┤
+                                                                       ├─ technical ────────┼→ devil's advocate → committee ⇄ review (≤2 rounds) → final → thesis
+                                                                       ├─ news & estimates ─┤
+                                                                       └─ risk/portfolio ───┘
+   each analyst (LLM mode): plan research (choose evidence) → interpret → guardrails (citations, numbers) → fallback
    │
 Deterministic core: providers (yfinance, SEC EDGAR, Wikipedia S&P 500) → normalisation/cross-check → validation
                     → tools (metrics, valuation, technicals, risk, portfolio, scenarios) → thresholds/peers → scores → evidence pack
-LLM adapter (provider-agnostic; Anthropic implemented; FakeLLM for tests) — optional; rule-based mode is labelled
+Team rulebook (rulebook.yaml + factors.py): 4 sector-percentile pillars, gates, fair value, buy-below, sizing, confidence
+LLM adapter (provider-agnostic): Claude Opus 5.5 default (adaptive thinking, effort, structured outputs, prompt caching,
+   server-side refusal fallback); OpenAI-compatible (Ollama, Gemini, Groq, OpenRouter); FakeLLM for tests
 Persistence: SQLAlchemy + Alembic (SQLite locally, PostgreSQL tested); immutable versioned analyses
 ```
 
@@ -30,6 +34,19 @@ Persistence: SQLAlchemy + Alembic (SQLite locally, PostgreSQL tested); immutable
 | 3 | Revenue growth (annual/quarterly YoY, multi-year), EPS growth, PEG, trailing/forward P/E, D/E, plus margins, ROE, ROIC, FCF, liquidity, leverage, dilution, EV/EBITDA, P/FCF, moat/management proxies and more | ✅ (about 450 metrics per company; METHODOLOGY §4.5) |
 | 4 | Context-aware, configurable thresholds by sector/industry/growth/business type, with explanations; documented methodology | ✅ (peer percentiles with per-metric fallback, sourced guardrails, business-type rules and overrides; every verdict explained) |
 | 5 | Calculate from statements; show periods, formulas, sources, dates; flag unavailable/stale/inconsistent data; never invent values; cross-check against SEC | ✅ (tiered cross-check, restatements, splits, scale errors, multi-class shares) |
+
+## Team rulebook (agreed rules)
+
+| Rule | Status |
+|---|---|
+| Gates (data, red-flag 8-Ks, leverage + negative FCF, dilution, falling estimates in a downtrend, portfolio, unresolved risk) that only lower a label | ✅ plus sector-aware leverage limits, listing-notice and split/vendor-data gates found necessary on live data |
+| Four equal pillars as sector percentiles with fallbacks; > half missing ⇒ 50 and lower confidence | ✅ |
+| Labels Strong Buy / Buy / Wait / Watchlist / Reject | ✅ |
+| Fair value (DCF + own P/E), buy-below, sizing with halving, review triggers | ✅ two-stage DCF on 3-year average FCF; low-precision flag when methods disagree > 2× |
+| Devil's Advocate "what does the market believe / why are we different", top 3 risks | ✅ deterministic reverse DCF (earnings-based for financials) or LLM answer |
+| Confidence rules | ✅ |
+| Each recommendation shows label, pillars, reasons for/against, fair value, buy-below, date, size, what would change, confidence | ✅ |
+| Whole S&P 500 classified (screen) and every analysis ranked against it | ✅ 503/503 in ≈ 4.5 min cold, ≈ 30 s warm |
 
 ## Master prompt requirements
 

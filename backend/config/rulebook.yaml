@@ -1,0 +1,81 @@
+# Team investment rulebook: the classification rules agents apply. Recorded with every analysis.
+# Methodology: docs/METHODOLOGY.md §R. Change values here, bump the version, and log the reason.
+version: "rulebook-2026.11-v2"
+
+# --- Pillars: equal weight; each measure is scored 0–100 as a percentile within the stock's GICS sector.
+pillars:
+  quality:   {weight: 0.25, measures: [roic_5y, roic_stability, fcf_conversion]}
+  value:     {weight: 0.25, measures: [fcf_yield, growth_gap, pe_vs_history]}
+  momentum:  {weight: 0.25, measures: [mom_12_1, trend_200]}
+  revisions: {weight: 0.25, measures: [eps_rev_90d, surprise_4q]}
+
+measures:
+  roic_5y:        {label: "ROIC, 5-year average", better: higher, unit: pct, anchors: [0.03, 0.30]}
+  roic_stability: {label: "ROIC stability (std. dev., 5y)", better: lower, unit: pct, anchors: [0.15, 0.01]}
+  fcf_conversion: {label: "FCF after SBC ÷ net income (3y)", better: higher, unit: x, anchors: [0.3, 1.2]}
+  fcf_yield:      {label: "FCF yield", better: higher, unit: pct, anchors: [0.0, 0.08]}
+  growth_gap:     {label: "Achieved growth − growth implied by price", better: higher, unit: pct, anchors: [-0.15, 0.10]}
+  pe_vs_history:  {label: "P/E percentile vs own 10y history", better: lower, unit: pct, anchors: [1.0, 0.0]}
+  mom_12_1:       {label: "12-month return excl. last month", better: higher, unit: pct, anchors: [-0.30, 0.40]}
+  trend_200:      {label: "Price vs 200-day average and its slope", better: higher, unit: pct, anchors: [-0.20, 0.20]}
+  _slope_200:     {label: "200-day average slope, 1 month (half of trend_200)", better: higher, unit: pct, anchors: [-0.03, 0.03]}
+  eps_rev_90d:    {label: "EPS estimate revision, 90 days", better: higher, unit: pct, anchors: [-0.10, 0.10]}
+  surprise_4q:    {label: "Average earnings surprise, last 4 quarters", better: higher, unit: pct, anchors: [-0.10, 0.10]}
+
+ranking:
+  min_sector_values: 8      # else universe percentile
+  min_universe_values: 20   # else absolute anchors (documented above)
+  pillar_missing_ratio: 0.5 # > half the measures missing => pillar = 50 and confidence penalty
+
+# --- Valuation model
+valuation:
+  discount_rate: 0.09        # ≈ 4–4.5% long-run risk-free + ≈5% equity risk premium (large US companies)
+  terminal_growth: 0.025
+  years: 10
+  growth_cap: [-0.05, 0.20]  # 5-year revenue CAGR used for fair value, clamped
+  high_growth_years: 5       # two-stage DCF: CAGR for years 1–5, then a linear fade to terminal growth by year 10
+  methods_disagree_ratio: 2.0  # flag fair value as low-precision when the two methods differ by more than this
+  margin_of_safety: 0.15     # buy-below = fair value × (1 − 0.15)
+  margin_of_safety_top_quality: 0.10   # when quality pillar ≥ 90
+  top_quality_pillar: 90
+
+# --- Exclusion gates (a gate can only lower a label)
+gates:
+  red_flag_8k_items: ["4.01", "4.02", "2.06", "1.03"]   # auditor change, non-reliance, impairment, bankruptcy => Reject
+  caution_8k_items: ["3.01"]   # listing notice: often a transfer between exchanges, so Wait until the filing is read
+  red_flag_days: 90
+  leverage_nd_ebitda: 4.0     # AND negative FCF => Reject
+  leverage_nd_ebitda_by_sector:   # capital-intensive, regulated or lease-funded models carry structurally higher debt
+    Utilities: 6.5              # regulated rate base; Moody's/S&P treat ~5–6x as normal for regulated utilities
+    Real Estate: 8.0            # REITs are financed against property; FCF is negative while developing
+  dilution_max_annual: 0.05   # => at most Watchlist
+  recent_split_days: 30       # split within this window => Watchlist (vendor per-share data may lag)
+  min_plausible_pe: 2.0       # vendor trailing P/E below this => Watchlist (data inconsistency)
+  portfolio_max_position: 0.05
+  portfolio_max_sector: 0.25
+
+# --- Labels: first matching rule wins
+labels:
+  strong_buy: {composite_min: 85, every_pillar_min: 50, price_vs_fair_max: 1.00}
+  buy:        {composite_min: 75, no_pillar_below: 25, price_vs_fair_max: 1.05}
+  wait:       {quality_min: 70, value_below: 50, momentum_below: 40}
+  watchlist:  {composite_min: 50}
+  reject:     {composite_below: 40, quality_below: 25}
+
+# --- Position sizing (share of portfolio)
+sizing:
+  strong_buy: 0.05
+  buy: 0.03
+  halve_if_vol_ratio_above: 1.5
+  halve_if_worst_loss_above: 0.40
+
+# --- Confidence (evidence quality, not probability of profit)
+confidence:
+  base: 0.85
+  data_acceptable: 0.08
+  data_poor: 0.20
+  per_missing_pillar: 0.10
+  pillar_disagreement: 0.10     # one pillar ≥ 80 and another ≤ 20
+  no_llm: 0.10
+  floor: 0.10
+  cap: 0.90

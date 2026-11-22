@@ -34,8 +34,9 @@ def news_score(classifications: list[dict[str, Any]]) -> Score:
 
 class NewsAnalyst(BaseAgent):
     name = "news"
-    title = "News & Sentiment Analyst"
-    responsibility = "Recent company, filing, analyst and industry developments and their likely materiality."
+    title = "News & Estimates Analyst"
+    responsibility = ("Recent company, filing and analyst developments and their materiality, plus the rulebook revisions "
+                      "pillar: 90-day consensus EPS revisions and the last four earnings surprises.")
     prompt_name = "news"
     schema = NewsNarrative
 
@@ -62,7 +63,26 @@ class NewsAnalyst(BaseAgent):
                   "analyst_actions": [{"id": a.id, "date": a.date, "title": a.title} for a in aa],
                   "upcoming": [{"id": i.id, "title": i.title, "date": i.date} for i in ctx.pack.by_category("calendar")],
                   "high_materiality_filings": [f.id for f in high]}
-        return {"score": None, "summary": summary, "claims": claims, "weaknesses": weaknesses,
+        rev = ((ctx.rulebook or {}).get("pillars") or {}).get("revisions") or {}
+        strengths = []
+        for mm in rev.get("measures", []):
+            if mm.get("score") is None:
+                continue
+            c = Claim(text=f"{mm['label']}: {mm['value'] * 100:+.1f}% → score {mm['score']:.0f}/100 ({mm['basis']}).",
+                      kind="fact", evidence_ids=[f"rb.m.{mm['key']}"])
+            (strengths if mm["score"] >= 60 else weaknesses if mm["score"] <= 40 else claims).append(c)
+        if rev.get("score") is not None:
+            summary = f"Revisions pillar {rev['score']:.0f}/100 (estimate revisions and earnings surprises). " + summary
+        tables["revisions_pillar"] = rev
+        score = None
+        if rev.get("score") is not None and not rev.get("sparse"):
+            score = Score(name="news", score=round(rev["score"] / 10, 2), rubric_version=(ctx.rulebook or {}).get("rulebook_version", ""),
+                          dimensions=[DimensionScore(name="revisions_pillar", weight=1.0, score=round(rev["score"] / 10, 2),
+                                                     coverage=1 - rev.get("missing_ratio", 0), components=rev.get("measures", []))],
+                          coverage=1 - rev.get("missing_ratio", 0),
+                          explanation="Rule-based mode: revisions pillar ÷ 10 (EPS revisions, earnings surprises). With an "
+                                      "LLM, news sentiment × materiality is scored instead and the pillar is shown alongside.")
+        return {"score": score, "summary": summary, "claims": claims, "weaknesses": weaknesses, "strengths": strengths,
                 "missing": ["News sentiment/materiality classification (requires LLM)",
                             "Coverage is limited to the Yahoo news feed and SEC filings; not comprehensive news coverage"],
                 "tables": tables, "confidence": ("Low", "News not classified; only filings and dated headlines listed.")}
@@ -79,3 +99,7 @@ class NewsAnalyst(BaseAgent):
         report.missing_information = sorted(set(n.get("coverage_limitations", []) + [
             m for m in report.missing_information if "requires LLM" not in m]))
         report.deterministic["classifications"] = cls
+        rev = report.deterministic.get("revisions_pillar") or {}
+        if rev.get("score") is not None:
+            report.claims.insert(0, Claim(text=f"Revisions pillar {rev['score']:.0f}/100 (rule-based).", kind="fact",
+                                          evidence_ids=["rb.pillar.revisions"]))

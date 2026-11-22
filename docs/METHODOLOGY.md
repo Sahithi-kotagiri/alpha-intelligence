@@ -1,7 +1,7 @@
 # Methodology
 
 How every number, threshold, score and decision is produced. Versions recorded with each analysis:
-`thresholds-2026.11-v1`, `rubrics-2026.11-v1`, `decision-policy-2026.11-v1` (files in `backend/config/`).
+`rulebook-2026.11-v2` (sets the label, §7), `thresholds-2026.11-v1`, `rubrics-2026.11-v1`, `decision-policy-2026.11-v1` (files in `backend/config/`).
 
 ## 1. Sources and source hierarchy
 
@@ -49,7 +49,7 @@ Status:
 | acceptable | any warning | −8% |
 | good | none of the above | 0% |
 
-`critical` status or a material conflict blocks Buy Now.
+`critical` status or a material conflict caps the label at Watchlist (rulebook gate).
 
 ## 4. Thresholds: how a metric passes or fails (`backend/analysis/assessment.py`)
 
@@ -161,57 +161,77 @@ All scores run 0–10, **higher = more favourable**; for risk, higher = lower ri
   - **Medium:** 1.01, 2.02, 5.02.
   - **Low:** 7.01, 8.01, 9.01.
 
-## 7. Committee and decision (`backend/config/decision_policy.yaml`, `backend/analysis/decision.py`)
+## 7. Team rulebook and decision (§R; `backend/config/rulebook.yaml`, `backend/analysis/factors.py`)
 
-**No averaging.** The committee works in four steps:
+The label is set by one versioned rulebook (`rulebook-2026.11-v2`). The same formulas are applied to the company being
+analysed and to every S&P 500 constituent in the universe screen, so the subject is ranked against peers measured
+identically. Agents interpret; they cannot raise the label.
 
-1. Rule-based disagreement detection:
-   - quality ≥ 7 with valuation ≤ 4
-   - quality ≥ 7 with technical ≤ 4 (classed as a time-horizon disagreement)
-   - positive news with weak cash flow
-   - quality business with high risk
-   - two or more high-severity Devil's Advocate objections against positive analysts
-2. Consistency checks: same price date, reporting period, benchmark and currency.
-3. **Gates** (each blocks Buy Now):
-   - critical data quality or a material conflict
-   - missing critical fields
-   - an unresolved high-severity objection
-   - valuation score < 2.5
-   - a portfolio constraint breach (excluded sector, maximum position)
-   - a high-materiality 8-K in the last 90 days
-   - confidence < 55%
-4. **Policy:**
-   - **Reject** if quality ≤ 3.5, or risk ≤ 3 with quality ≤ 5.5.
-   - **Buy Now** if quality ≥ 7, valuation ≥ 5, technical ≥ 5 and risk ≥ 4, and no gate applies.
-   - **Wait** if quality ≥ 6.
-   - **Watchlist** otherwise.
+### 7.1 Four pillars (25% each), scored 0–100 as sector percentiles
 
-**Bounded review:** at most two committee rounds, with up to three questions per round to specific agents. Answers must cite evidence or state that the question cannot be resolved. The full record is stored.
+| Pillar | Measures (equal weight within the pillar) | Source |
+|---|---|---|
+| Quality | ROIC 5-year average = operating income × (1 − tax rate, clamped 0–35%) ÷ (total assets − current liabilities − cash); ROIC stability = standard deviation of the yearly ROIC (lower is better); FCF conversion = Σ(OCF − capex − SBC) ÷ Σ net income over 3 years | SEC 10-K XBRL |
+| Value | FCF yield = latest FY FCF ÷ market cap; growth gap = achieved revenue CAGR (up to 5 years) − growth implied by today's EV (reverse DCF on the same normalised FCF base as the fair value); P/E percentile within the company's own 10-year history (split-adjusted SEC EPS × month-end close; lower is better) | SEC + Yahoo prices |
+| Momentum | 12-month return excluding the most recent month (adjusted closes); trend = average of the scores for price ÷ 200-day average and the 1-month slope of that average | Yahoo prices |
+| Revisions | 90-day change in consensus EPS (this and next fiscal year); average surprise of the last four reports (clipped ±50%) | Yahoo consensus (vendor estimates) |
 
-With an LLM, the committee may choose a different **allowed** recommendation only with a written override reason. The override is stored next to the policy recommendation.
+- **Percentile basis:** same GICS sector with at least 8 values; otherwise the S&P 500 (≥ 20 values); otherwise documented absolute anchors in `rulebook.yaml`. The basis and n are shown per measure.
+- **Missing data:** missing measures are skipped. If more than half of a pillar's applicable measures are missing, the pillar counts as 50 and confidence falls. Two such pillars → *Insufficient data* (recorded as Watchlist, no buy or reject call).
+- **Financials** (banks, insurers): ROE replaces ROIC and earnings yield replaces FCF yield; FCF conversion and the reverse DCF are *not applicable* (not counted as missing).
+- **Composite** = average of the four pillars.
 
-**Confidence** measures assessment quality, not probability of profit. It starts at 85% and subtracts:
+### 7.2 Fair value, buy-below and size
 
-- the data-quality penalty
-- 4% per unavailable dimension
-- 5% per material disagreement
-- 3% per unresolved question
-- 10% in rule-based mode (no LLM)
-- 5% if news was not assessed
+- **Fair value** = mean of (a) a two-stage 10-year DCF on normalised FCF after SBC (the 3-year average, so a peak year does not set the base; the latest year if fewer than 3): the 5-year revenue CAGR (clamped to −5%…20%) for years 1–5, fading linearly to the 2.5% terminal growth by year 10, discount rate 9%, less net debt, per share; and (b) TTM EPS × the company's own median P/E over 10 years. Methods that cannot be computed are left out. When the two methods differ by more than 2×, the fair value is flagged as low precision in the report and the screener.
+- **Buy-below** = fair value × 0.85 (× 0.90 when quality ≥ 90).
+- **Position size:** 5% for Strong Buy, 3% for Buy; halved when 1-year volatility exceeds 1.5× the S&P 500's, and halved again when the 3-year maximum drawdown exceeds 40%; capped by the mandate's maximum position.
 
-It is then clamped to [10%, 90%].
+### 7.3 Labels (first matching rule)
 
-**Entry price:**
+1. **Reject:** composite < 40 or quality < 25.
+2. **Strong Buy:** composite ≥ 85, every pillar ≥ 50, price ≤ fair value.
+3. **Buy:** composite ≥ 75, no pillar < 25, price ≤ fair value × 1.05.
+4. **Wait:** quality ≥ 70 but value < 50, momentum < 40, or price above fair value (alert at buy-below).
+5. **Watchlist:** otherwise (composite 40–75).
 
-- A range is given only when a justified technical support zone and the peer-relative valuation anchors (TTM EPS × peer median P/E; consensus EPS × peer median forward P/E) agree, or when only one exists.
-- If the two differ by more than 5%, the report says that **no reliable entry range** exists and shows both levels.
+### 7.4 Gates (can only lower the label)
 
-**Allocation:**
+| Gate | Cap |
+|---|---|
+| 8-K item 4.01 auditor change, 4.02 non-reliance, 2.06 impairment or 1.03 bankruptcy in the last 90 days | Reject |
+| 8-K item 3.01 listing notice in the last 90 days (often a transfer between exchanges; read the filing) | Wait |
+| Net debt/EBITDA above the sector limit (4×; Utilities 6.5×, Real Estate 8×) or EBITDA ≤ 0, **and** negative FCF (non-financials) | Reject |
+| Data quality poor or critical, or core financials missing | Watchlist |
+| Stock split in the last 30 days, or a vendor trailing P/E below 2 (per-share data likely on different share bases) | Watchlist |
+| Diluted share count rising > 5% a year (2-year CAGR; split-sized jumps ignored) | Watchlist |
+| Consensus EPS falling over 90 days **and** price below a falling 200-day average | Wait |
+| Portfolio breach (excluded sector, position above maximum) | Wait |
+| Unresolved high-severity Devil's Advocate risk; other high-materiality 8-K (cyber, acceleration, change of control) | Wait |
+| Devil's Advocate has no credible, evidenced answer to "what does the market believe, and why are we different?" | Buy (no Strong Buy) |
 
-- Requires holdings, a risk tolerance and a horizon.
-- The cap is 3%, 5% or 8% (conservative, moderate, aggressive), or the portfolio's maximum position if lower.
-- Risk-budget size = target volatility contribution (6%, 10% or 15%) × portfolio volatility ÷ (stock volatility × correlation).
-- The size is scaled by confidence/90%, and the range shown is half to full size.
+The market-belief answer is deterministic without an LLM: the reverse-DCF growth is what the market believes; the
+difference is credible only if achieved growth exceeds it and estimates are not falling (revisions pillar ≥ 50).
+
+### 7.5 Committee
+
+1. Rule-based disagreement detection between the analysts (quality vs valuation, fundamentals vs trend, news vs cash flow, quality vs risk, Devil's Advocate vs bullish analysts) and consistency checks (price date, reporting period, benchmark, currency).
+2. Bounded review: at most two rounds, up to three questions each, answered with cited evidence or "cannot resolve". A resolved bear-case question removes one unresolved high-severity risk.
+3. The rulebook label is computed with the committee-time gates. With an LLM, the committee may choose only that label **or a more cautious one**, with a cited reason stored next to the rulebook label.
+
+### 7.6 Confidence (evidence quality, not probability of profit)
+
+85%, minus 8% for acceptable data or 20% for poor/critical data, 10% per pillar with more than half its measures missing,
+10% if pillars disagree sharply (one ≥ 80 and another ≤ 20), and 10% without an LLM review; clamped to 10%–90%.
+
+### 7.7 What every recommendation shows
+
+Label, composite and pillars (with each measure's value, score, percentile basis and n); the top two reasons for and
+against; fair value, its methods, buy-below and the price date; position size; the market belief and our difference;
+the Devil's Advocate's top three risks; what would change the call; confidence with its reasons; review triggers
+(close below the 200-day average, consensus EPS falling over two months, any thesis assumption At risk).
+
+The earlier 0–10 agent scores (§5) are still computed and shown as diagnostics for each analyst; they do not set the label.
 
 ## 8. Portfolio analytics (`backend/tools/portfolio_metrics.py`)
 
@@ -253,6 +273,6 @@ LLM-identified qualitative assumptions, such as a moat rating, are stored for ma
 - **Entry:** the adjusted close on the decision's price date (no look-ahead).
 - **Horizons:** 21, 63, 126 and 252 trading sessions.
 - **Measures:** total return (adjusted close as a total-return proxy), benchmark return, excess return, max drawdown and volatility.
-- **Hit rate:** for Buy Now, excess return > 0; for Reject, excess return < 0. Wait and Watchlist are reported but not hit-scored.
+- **Hit rate:** for Strong Buy and Buy, excess return > 0; for Reject, excess return < 0. Wait and Watchlist are reported but not hit-scored. Results are also grouped by composite band (< 50, 50–75, ≥ 75).
 - **Groupings:** recommendation, quality band, sector and user action.
 - With fewer than 30 observations in a group, no significance is claimed.

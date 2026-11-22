@@ -14,6 +14,7 @@ from backend.agents.base import AgentContext, load_prompt
 from backend.agents.guardrails import claim_texts, strip_invalid, unverified_numbers
 from backend.agents.llm import LLMClient, LLMError
 from backend.analysis import decision as D
+from backend.analysis import factors as F
 from backend.analysis.config_loader import versions
 from backend.analysis.evidence import render_for_prompt
 from backend.analysis.scoring import risk_rating
@@ -44,14 +45,12 @@ class FinalDecisionAgent:
         fund = ctx.reports.get("fundamental")
         tech = ctx.reports.get("technical")
         da = ctx.reports.get("devils_advocate")
-        peer_stats = ctx.peer.get("stats") or {}
-        eps_ttm = ctx.data_through.get("eps_ttm")
-        fwd = ctx.pack.get("est.eps_next_fy")
-        entry = D.entry_price(rec, snap_price, ctx.data_through.get("prices"),
-                              (tech.deterministic.get("entry_zone") if tech else {}) or {}, ctx.assessments, eps_ttm,
-                              (peer_stats.get("trailing_pe") or {}).get("median"), fwd.value if fwd else None,
-                              (peer_stats.get("forward_pe") or {}).get("median"))
-        alloc = D.allocation(rec, conf, ctx.portfolio, (ctx.risk or {}).get("vol_1y"))
+        rb = committee.get("rulebook") or ctx.rulebook
+        entry = D.entry_price(rec, rb, ctx.data_through.get("prices"),
+                              (tech.deterministic.get("entry_zone") if tech else {}) or {})
+        d = rb.get("detail", {})
+        size = F.position_size(rec, d.get("vol_1y"), ctx.bench_vol, d.get("max_drawdown_3y"))
+        alloc = D.allocation(rec, size, ctx.portfolio)
         # thesis bullets and risks (rule-based baseline)
         thesis: list[Claim] = []
         if fund:
@@ -69,35 +68,58 @@ class FinalDecisionAgent:
         cal = ctx.pack.get("cal.next_earnings")
         if cal:
             triggers.append(f"Next earnings release (vendor calendar: {cal.display}; confirm with company).")
+        triggers += list(rb.get("review_triggers", []))
         triggers += ["Any new 10-Q/10-K filing (re-test thesis assumptions).",
                      "8-K items with high materiality (impairment, non-reliance, auditor change, cybersecurity, delisting).",
                      "Price move of more than 15% from the reference price or a close below the technical invalidation level."]
         inval = (da.deterministic.get("llm_invalidation_conditions") or da.deterministic.get("invalidation_conditions")) if da else []
         q, v = ctx.scores["fundamental_quality"].score, ctx.scores["valuation"].score
         rscore = ctx.scores["risk"].score if ctx.scores.get("risk") else None
-        summary = (f"{ctx.company_name} ({ctx.ticker}) — {rec} at {conf:.0%} confidence (confidence reflects evidence sufficiency, "
-                   f"not probability of profit). Business quality {q if q is not None else 'n/a'}/10; valuation "
-                   f"{v if v is not None else 'n/a'}/10 versus {str(ctx.peer.get('level')).replace('_', '-')} peers ({ctx.peer.get('name')}); technical "
-                   f"{committee['scores'].get('technical')}/10; risk rating {risk_rating(rscore)}. "
+        pil = {k: p["score"] for k, p in rb["pillars"].items()}
+        fv_txt = (f"Fair value ${rb['fair_value']:,.2f}, buy-below ${rb['buy_below']:,.2f}, price ${rb['price']:,.2f}. "
+                  if rb.get("fair_value") and rb.get("price") else "Fair value not computable. ")
+        summary = (f"{ctx.company_name} ({ctx.ticker}) — {rec} at {conf:.0%} confidence (evidence quality, not probability of "
+                   f"profit). Rulebook composite {rb['composite']:.0f}/100: quality {pil['quality']:.0f}, value "
+                   f"{pil['value']:.0f}, momentum {pil['momentum']:.0f}, revisions {pil['revisions']:.0f} (sector "
+                   f"percentiles). {fv_txt}"
                    f"Decision basis: {committee['policy_trace'][-1] if committee['policy_trace'] else ''} "
                    + (f"Strongest objection: {risks[0]['text']} " if risks else "")
                    + f"Data quality: {ctx.dq.status}; prices through {ctx.data_through.get('prices')}, financials through "
                    f"{ctx.data_through.get('financials')}.")
+        da_det = (da.deterministic if da else {}) or {}
+        rulebook_view = {
+            "version": rb["rulebook_version"], "label": rec, "rulebook_label": committee["policy_recommendation"],
+            "composite": rb["composite"], "pillars": rb["pillars"], "trace": committee["policy_trace"],
+            "gates": committee["gates"], "price": rb.get("price"), "fair_value": rb.get("fair_value"),
+            "buy_below": rb.get("buy_below"), "price_vs_fair": rb.get("price_vs_fair"),
+            "fair_value_methods": rb.get("fair_value_methods", []), "implied_growth": rb.get("implied_growth"),
+            "fair_value_low_precision": bool(d.get("fair_value_low_precision")), "fair_value_spread": d.get("fair_value_spread"),
+            "revenue_cagr": rb.get("revenue_cagr"), "position_size": size, "data_date": ctx.data_through.get("prices"),
+            "reasons_for": rb.get("reasons_for", []), "reasons_against": rb.get("reasons_against", []),
+            "what_would_change": rb.get("what_would_change", []), "confidence": conf,
+            "confidence_reasons": committee["confidence_explanation"], "review_triggers": rb.get("review_triggers", []),
+            "market_belief": da_det.get("market_belief"), "our_difference": da_det.get("our_difference"),
+            "difference_credible": da_det.get("difference_credible"), "top_risks": da_det.get("top_risks", []),
+            "peer_count": rb.get("peer_count"), "missing": rb.get("missing", {}),
+            "insufficient_data": committee.get("insufficient_data", False),
+        }
         report: dict[str, Any] = {
             "recommendation": rec, "confidence": conf, "confidence_explanation": committee["confidence_explanation"],
             "policy_recommendation": committee["policy_recommendation"], "overridden": committee["overridden"],
             "override_reason": committee["override_reason"], "allowed_recommendations": committee["allowed"],
-            "gates": committee["gates"], "decision_trace": committee["policy_trace"],
+            "gates": committee["gates"], "decision_trace": committee["policy_trace"], "rulebook": rulebook_view,
             "executive_summary": summary, "thesis": [c.model_dump() for c in thesis], "risks": risks,
             "entry_price": entry, "allocation": alloc,
             "monitoring_plan": {"triggers": triggers, "invalidation_conditions": inval or [],
                                 "immediate_reassessment": ["High-materiality 8-K item", "Thesis assumption status 'Invalidated'",
                                                            "Restatement or non-reliance notice"],
                                 "qualitative_assumptions": []},
-            "scores": {"fundamental": fund.score.get("score") if fund and fund.score else None,
+            "scores": {"composite": rb["composite"], **{f"pillar_{k}": v for k, v in pil.items()},
+                       "fundamental": fund.score.get("score") if fund and fund.score else None,
                        "business_quality": q, "valuation": v, "technical": committee["scores"].get("technical"),
                        "news": committee["scores"].get("news"), "risk": rscore, "risk_rating": risk_rating(rscore),
-                       "direction": "all scores 0–10, higher = more favourable (risk: higher = lower risk)"},
+                       "direction": "composite and pillars 0–100 (sector percentiles); agent scores 0–10; higher = more "
+                                    "favourable (risk: higher = lower risk)"},
             "mode": "deterministic", "narrative_model_run": None,
         }
         if llm is not None:
@@ -138,12 +160,15 @@ class FinalDecisionAgent:
             "assumptions": [f"Business type classified as {ctx.profile.get('primary')} ({'; '.join(ctx.profile.get('rationale', []))})",
                             f"Peer group: {ctx.peer.get('level')} '{ctx.peer.get('name')}' ({ctx.peer.get('n_with_data')} with data)",
                             "Valuation uses latest close and TTM figures; forward figures are vendor consensus estimates.",
+                            f"Rulebook {rb['rulebook_version']}: pillars ranked against {rb.get('peer_count') or 0} screened S&P 500 "
+                            "companies (sector percentile, falling back to the S&P 500 or documented absolute anchors).",
                             "Price history from Yahoo Finance is split-adjusted; total returns use adjusted closes."],
             "limitations": [
                 "yfinance is an unofficial Yahoo Finance client: not a licensed feed, may change without notice; commercial use restricted.",
                 "Peer comparisons use vendor-reported metrics for all peers; definitions may differ slightly from our calculations.",
                 "News coverage is limited to the Yahoo feed and SEC filings.",
-                "Scores and thresholds are analytical conventions, not facts; they have not been statistically validated.",
+                "Rulebook thresholds and weights are the team's analytical conventions, not facts; they have not been statistically validated.",
+                "Fair value depends on the discount rate (9%), terminal growth (2.5%) and capped historical growth; it is a model estimate.",
             ] + committee.get("limitations", []),
             "price_display": fmt_value(snap_price, "USD/share") if snap_price else None,
         }

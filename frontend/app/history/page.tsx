@@ -4,7 +4,7 @@ import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useApi } from "@/hooks/useApi";
-import { dt, pct } from "@/lib/format";
+import { dt, pct, RECS } from "@/lib/format";
 import { Badge, Card, Empty, Loading, RecBadge } from "@/components/ui";
 
 function HistoryInner() {
@@ -26,14 +26,14 @@ function HistoryInner() {
         <div className="row mb">
           <input placeholder="Ticker" value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} style={{ width: 110 }} aria-label="Ticker filter" />
           <select value={rec} onChange={(e) => setRec(e.target.value)} aria-label="Recommendation filter">
-            <option value="">All recommendations</option>{["Buy Now", "Wait", "Watchlist", "Reject"].map((r) => <option key={r}>{r}</option>)}
+            <option value="">All recommendations</option>{RECS.map((r) => <option key={r}>{r}</option>)}
           </select>
         </div>
         {loading && <Loading />}
         {data && !data.analyses.length && <Empty title="No matching analyses" />}
         {data?.analyses?.length > 0 && (
           <div className="table-wrap"><table>
-            <thead><tr><th /><th>Date</th><th>Company</th><th>Version</th><th>Recommendation</th><th className="r">Confidence</th><th className="r">Quality</th><th className="r">Valuation</th><th className="r">Technical</th><th>Price</th><th>Trigger</th></tr></thead>
+            <thead><tr><th /><th>Date</th><th>Company</th><th>Version</th><th>Recommendation</th><th className="r">Confidence</th><th className="r">Composite</th><th className="r">Quality</th><th className="r">Value</th><th className="r">Momentum</th><th className="r">Revisions</th><th>Price</th><th>Trigger</th></tr></thead>
             <tbody>{data.analyses.map((r: any) => (
               <tr key={r.id}>
                 <td><input type="checkbox" checked={sel.includes(r.id)} onChange={() => toggle(r.id)} disabled={r.status !== "completed"} aria-label={`Select ${r.ticker} v${r.version}`} /></td>
@@ -42,7 +42,7 @@ function HistoryInner() {
                 <td>v{r.version}</td>
                 <td>{r.status === "completed" ? <RecBadge rec={r.recommendation} /> : <Badge tone={r.status === "failed" ? "neg" : "acc"}>{r.status}</Badge>}</td>
                 <td className="r num">{r.confidence ? pct(r.confidence, 0) : "—"}</td>
-                <td className="r num">{r.scores?.business_quality ?? "—"}</td><td className="r num">{r.scores?.valuation ?? "—"}</td><td className="r num">{r.scores?.technical ?? "—"}</td>
+                {["composite", "pillar_quality", "pillar_value", "pillar_momentum", "pillar_revisions"].map((k) => <td key={k} className="r num">{r.scores?.[k] !== undefined && r.scores?.[k] !== null ? Math.round(r.scores[k]) : "—"}</td>)}
                 <td className="small num">{r.reference_price ? `$${r.reference_price.toFixed(2)}` : "—"}</td>
                 <td className="xs">{r.trigger}{r.mode ? ` · ${r.mode}` : ""}</td>
               </tr>))}</tbody>

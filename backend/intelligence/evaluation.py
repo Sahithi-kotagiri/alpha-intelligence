@@ -27,7 +27,7 @@ from backend.schemas.agents import Claim
 
 
 class BaselineReport(BaseModel):
-    recommendation: Literal["Buy Now", "Wait", "Watchlist", "Reject"]
+    recommendation: Literal["Strong Buy", "Buy", "Wait", "Watchlist", "Reject"]
     confidence_pct: float
     thesis: list[Claim]
     risks: list[Claim]

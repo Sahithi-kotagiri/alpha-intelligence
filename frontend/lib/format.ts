@@ -55,7 +55,10 @@ export function ago(s: string | null | undefined): string {
   return `${Math.round(h / 24)} days ago`;
 }
 
-export const recTone: Record<string, string> = { "Buy Now": "pos", Wait: "warn", Watchlist: "acc", Reject: "neg" };
+export const recTone: Record<string, string> = {
+  "Strong Buy": "strong", Buy: "pos", "Buy Now": "pos", Wait: "warn", Watchlist: "acc", Reject: "neg", "Insufficient data": "neu",
+};
+export const RECS = ["Strong Buy", "Buy", "Wait", "Watchlist", "Reject"];
 export const verdictTone: Record<string, string> = {
   favourable: "pos", unfavourable: "neg", neutral: "neu", informational: "neu", not_meaningful: "neu",
   insufficient_data: "warn", not_applicable: "neu",
@@ -65,7 +68,7 @@ export const statusTone: Record<string, string> = {
   good: "pos", acceptable: "acc", poor: "warn", critical: "neg",
 };
 export const AGENT_TITLES: Record<string, string> = {
-  fundamental: "Fundamental Analyst", technical: "Technical Analyst", news: "News & Sentiment Analyst",
+  fundamental: "Fundamental Analyst", valuation: "Valuation Analyst", technical: "Technical Analyst", news: "News & Estimates Analyst",
   risk_portfolio: "Risk & Portfolio Analyst", devils_advocate: "Devil's Advocate", committee: "Investment Committee",
-  final_decision: "Final decision",
+  final_decision: "Final decision", rulebook: "Rulebook",
 };

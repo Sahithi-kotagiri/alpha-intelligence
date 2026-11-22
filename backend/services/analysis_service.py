@@ -125,6 +125,9 @@ class JobRunner:
                 raise ValueError(res["message"])
             universe = U.universe_rows(db)
             snaps = U.snapshot_infos(db)
+            from backend.services.rulebook_service import universe_raws
+
+            factor_peers = universe_raws(db)
             prior = self._prior(db, user_id, ticker, analysis_id)
         ident = CompanyIdentity(**res["identity"])
         emit("resolve", "completed", f"{ident.name} · {ident.exchange or 'exchange n/a'} · {ident.currency or ''} · "
@@ -134,7 +137,7 @@ class JobRunner:
         emit("mode", "completed", "LLM interpretation enabled" if llm else
              "No LLM configured: agents produce rule-based reports only (clearly labelled)")
         params["prior"] = prior
-        graph = build_graph(self.providers, llm, emit, universe, snaps)
+        graph = build_graph(self.providers, llm, emit, universe, snaps, factor_peers)
         state = graph.invoke({"analysis_id": analysis_id, "params": params, "identity": ident, "review_round": 0,
                               "review_log": [], "reports": {}, "committee_history": []})
         emit("save", "started", "Saving analysis snapshot, evidence and thesis")
@@ -169,7 +172,7 @@ class JobRunner:
             "scores": {k: (v.model_dump() if v is not None else None) for k, v in comp["scores"].items()},
             "profile": comp["profile"].model_dump(), "peer": comp["peer"], "technicals": comp["technicals"],
             "risk": comp["risk"], "scenarios": comp["scenarios"], "portfolio": comp["portfolio"], "charts": comp["charts"],
-            "thesis": st["thesis"], "data_through": ctx.data_through, "model_runs": ctx.model_runs, "mode": mode,
+            "thesis": st["thesis"], "data_through": ctx.data_through, "model_runs": ctx.model_runs, "research_log": ctx.research_log, "mode": mode,
             "fetches": [f.__dict__ for f in res.fetches], "cross_checks": (res.financials.cross_checks if res.financials else [])[:400],
         })
         with self.sf() as db:

@@ -9,12 +9,12 @@ import { ago, dt, pct } from "@/lib/format";
 import { Badge, Card, ErrorBox, EvidenceProvider, Loading, RecBadge, Status, Tabs } from "@/components/ui";
 import { AgentStatus, Timeline } from "@/components/Progress";
 import {
-  AskView, CommitteeView, DataQualityView, EvidenceView, FundamentalsView, NewsView, RiskView, SummaryView, TechnicalView, ThesisView,
+  AskView, CommitteeView, ValuationView, DataQualityView, EvidenceView, FundamentalsView, NewsView, RiskView, SummaryView, TechnicalView, ThesisView,
 } from "@/components/AnalysisViews";
 
 const TABS = [
   { id: "summary", label: "Decision" }, { id: "committee", label: "Investment committee" }, { id: "fundamentals", label: "Fundamentals" },
-  { id: "technical", label: "Technical" }, { id: "news", label: "News & filings" }, { id: "risk", label: "Risk & portfolio" },
+  { id: "valuation", label: "Valuation" }, { id: "technical", label: "Technical" }, { id: "news", label: "News & filings" }, { id: "risk", label: "Risk & portfolio" },
   { id: "thesis", label: "Thesis" }, { id: "evidence", label: "Evidence" }, { id: "quality", label: "Data quality" }, { id: "ask", label: "Ask" },
 ];
 
@@ -93,7 +93,12 @@ export default function AnalysisPage({ params }: { params: Promise<{ id: string 
               <div><span className="muted small">Confidence </span><span className="num" style={{ fontSize: 18 }}>{pct(r.final.confidence, 0)}</span>
                 <span className="xs faint"> — assessment quality and evidence sufficiency, not probability of profit</span></div>
               <div className="small muted">{r.final.decision_trace[r.final.decision_trace.length - 1]}</div>
-              {r.final.overridden && <div className="small" style={{ color: "var(--warn)" }}>Committee overrode policy ({r.final.policy_recommendation}).</div>}
+              {r.final.rulebook && <div className="row" style={{ gap: 10 }}>
+                <span className="small muted">Composite <span className="num">{Math.round(r.final.rulebook.composite)}</span></span>
+                {r.final.rulebook.buy_below && <span className="small muted">Buy-below <span className="num">${r.final.rulebook.buy_below.toFixed(2)}</span></span>}
+                {r.final.rulebook.position_size?.size > 0 && <span className="small muted">Size <span className="num">{pct(r.final.rulebook.position_size.size, 1)}</span></span>}
+              </div>}
+              {r.final.overridden && <div className="small" style={{ color: "var(--warn)" }}>Committee lowered the rulebook label ({r.final.policy_recommendation}).</div>}
               {r.mode !== "llm" && <div className="xs" style={{ color: "var(--warn)" }}>Rule-based mode: no LLM was configured, so agents did not interpret qualitative evidence.</div>}
             </div>
             <dl className="kv small">
@@ -113,6 +118,7 @@ export default function AnalysisPage({ params }: { params: Promise<{ id: string 
           {tab === "summary" && <SummaryView r={r} analysisId={id} />}
           {tab === "committee" && <CommitteeView r={r} analysisId={id} />}
           {tab === "fundamentals" && <FundamentalsView r={r} />}
+          {tab === "valuation" && <ValuationView r={r} analysisId={id} />}
           {tab === "technical" && <TechnicalView r={r} />}
           {tab === "news" && <NewsView r={r} />}
           {tab === "risk" && <RiskView r={r} />}

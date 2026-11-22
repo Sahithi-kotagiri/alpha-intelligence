@@ -27,7 +27,7 @@ SCREEN_FIELDS = ["trailingPE", "forwardPE", "trailingPegRatio", "debtToEquity", 
                  "recommendationMean", "numberOfAnalystOpinions", "targetMeanPrice", "averageVolume", "heldPercentInsiders",
                  "overallRisk", "auditRisk", "boardRisk", "compensationRisk", "shareHolderRightsRisk", "fullTimeEmployees",
                  "country", "website", "longBusinessSummary", "enterpriseValue", "forwardEps", "trailingEps", "pegRatio",
-                 "sharesOutstanding", "regularMarketTime"]
+                 "sharesOutstanding", "regularMarketTime", "totalDebt", "totalCash", "ebitda"]
 
 
 def refresh_universe(db: Session, providers, force: bool = False) -> dict[str, Any]:
@@ -154,13 +154,33 @@ def snapshot_infos(db: Session, max_age_hours: float = 72) -> dict[str, dict[str
     return out
 
 
-def run_screen(session_factory, providers, run_id: int, workers: int = 4) -> None:
-    """Fetch vendor metrics for every constituent (throttled) and store snapshots."""
+def run_screen(session_factory, providers, run_id: int, workers: int = 4, factors: bool = True) -> None:
+    """Phase 1: vendor metrics for every constituent. Phase 2: rulebook factors (batched prices, SEC, estimates)."""
     with session_factory() as db:
         run = db.get(ScreenRun, run_id)
         rows = universe_rows(db)
-        run.status, run.started_at, run.total = "running", datetime.now(UTC), len(rows)
+        run.status, run.started_at, run.total, run.phase = "running", datetime.now(UTC), len(rows), "vendor metrics"
         db.commit()
+    try:
+        _info_phase(session_factory, providers, run_id, rows, workers)
+        if factors:
+            from backend.services.rulebook_service import run_factor_phase
+
+            run_factor_phase(session_factory, providers, run_id, rows, workers)
+    except Exception as exc:  # record, never leave a run stuck in "running"
+        log.exception("screen failed")
+        with session_factory() as db:
+            run = db.get(ScreenRun, run_id)
+            run.status, run.error, run.completed_at = "failed", str(exc)[:500], datetime.now(UTC)
+            db.commit()
+        return
+    with session_factory() as db:
+        run = db.get(ScreenRun, run_id)
+        run.status, run.completed_at, run.phase = "completed", datetime.now(UTC), "done"
+        db.commit()
+
+
+def _info_phase(session_factory, providers, run_id: int, rows: list[dict[str, Any]], workers: int) -> None:
 
     def fetch(sym):
         try:
@@ -194,7 +214,7 @@ def run_screen(session_factory, providers, run_id: int, workers: int = 4) -> Non
                 db.commit()
     with session_factory() as db:
         run = db.get(ScreenRun, run_id)
-        run.status, run.completed_at, run.succeeded, run.failed = "completed", datetime.now(UTC), ok, fail
+        run.succeeded, run.failed = ok, fail
         db.commit()
 
 
@@ -212,10 +232,19 @@ def screener_table(db: Session) -> dict[str, Any]:
             lo, hi = cfg["peer_group"]["valid_ranges"].get(k, [-1e18, 1e18])
             if v is not None and lo <= v <= hi:
                 by_sector.setdefault(r["sector"], {}).setdefault(k, []).append(v)
+    from backend.services.rulebook_service import universe_labels
+
+    labels = universe_labels(db)
     out = []
     for r in rows:
         s = snaps.get(r["symbol"])
         rec = dict(r)
+        lab = labels.get(r["symbol"])
+        if lab:
+            rec.update(label=lab["label"], composite=lab["composite"], pillars=lab["pillars"],
+                       fair_value=lab["fair_value"] and round(lab["fair_value"], 2), buy_below=lab["buy_below"],
+                       price_vs_fair=lab["price_vs_fair"] and round(lab["price_vs_fair"], 3),
+                       gates=[g["id"] for g in lab["gates"] if g.get("binding")])
         rec["snapshot_status"] = s.status if s else "not_screened"
         rec["retrieved_at"] = s.retrieved_at.isoformat() if s else None
         if s and s.status == "ok":
@@ -240,8 +269,14 @@ def screener_table(db: Session) -> dict[str, Any]:
     last = db.scalars(select(ScreenRun).order_by(ScreenRun.id.desc()).limit(1)).first()
     return {"rows": out, "count": len(out), "screen_run": None if last is None else
             {"id": last.id, "status": last.status, "total": last.total, "succeeded": last.succeeded, "failed": last.failed,
+             "phase": last.phase, "rulebook_version": last.rulebook_version,
              "started_at": last.started_at.isoformat() if last.started_at else None,
              "completed_at": last.completed_at.isoformat() if last.completed_at else None},
+            "label_counts": {lbl: sum(1 for x in out if x.get("label") == lbl) for lbl in
+                             ["Strong Buy", "Buy", "Wait", "Watchlist", "Reject", "Insufficient data"]},
+            "rulebook": "Labels apply the team rulebook (docs/METHODOLOGY.md §R) to every constituent: four pillars "
+                        "scored as sector percentiles, gates, and a fair value from a DCF and own-history P/E. A screen "
+                        "label is a first pass; a full analysis adds data validation, news and the committee.",
             "method": "Vendor-reported metrics (Yahoo); percentile = share of same-sector constituents the company is "
                       "better than (lower is better for valuation multiples). value_rank/quality_rank = mean of available "
                       "percentiles; screening ranks are not recommendations."}

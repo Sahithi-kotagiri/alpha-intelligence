@@ -39,7 +39,7 @@ def test_llm_assistant_validates_citations(client):
 def test_baseline_comparison_with_fake_llm(client):
     aid, _ = _run(client)
     client.app.state.llm_factory = lambda: FakeLLM(lambda s, u, schema: {
-        "recommendation": "Buy Now", "confidence_pct": 80, "executive_summary": "Strong company trading at 31313131x sales.",
+        "recommendation": "Buy", "confidence_pct": 80, "executive_summary": "Strong company trading at 31313131x sales.",
         "thesis": [{"text": "Revenue grows", "kind": "fact", "evidence_ids": ["fin.bogus"]}], "risks": [],
         "bear_case": "None", "missing_information": []})
     r = client.post("/api/evaluation/baseline", json={"analysis_id": aid, "repeats": 2}).json()
@@ -64,6 +64,21 @@ def test_universe_screen_and_screener(client):
     s = client.get("/api/screener").json()
     assert s["screen_run"]["succeeded"] == 13 and s["rows"][0]["metrics"]
     assert any(r.get("sector_percentiles") for r in s["rows"])
+    # rulebook labels for every screened constituent
+    assert s["screen_run"]["status"] == "completed" and s["screen_run"]["rulebook_version"].startswith("rulebook-")
+    labelled = [r for r in s["rows"] if r.get("label")]
+    assert len(labelled) == 13
+    assert sum(s["label_counts"].values()) == 13
+    r0 = labelled[0]
+    assert set(r0["pillars"]) == {"quality", "value", "momentum", "revisions"}
+    assert all(0 <= v <= 100 for v in r0["pillars"].values())
+    # the screen stores the vendor fields the factor engine needs (net debt drives fair value and the leverage gate)
+    from backend.services.universe import SCREEN_FIELDS
+
+    assert {"totalDebt", "totalCash", "ebitda", "marketCap", "trailingPE", "trailingEps"} <= set(SCREEN_FIELDS)
+    detail = client.get("/api/screener/TSTA").json()
+    assert detail["ticker"] == "TSTA" and set(detail["pillar_detail"]) == {"quality", "value", "momentum", "revisions"}
+    assert client.get("/api/screener/NOPE").status_code == 404
 
 
 def test_universe_change_detection(client):

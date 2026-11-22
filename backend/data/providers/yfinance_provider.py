@@ -217,3 +217,57 @@ class YFinanceProvider:
             return df if df is not None else pd.DataFrame()
 
         return self._cached("earnings_history", to_yahoo_symbol(ticker), self.ttl_info, fetch)
+
+    def get_eps_trend(self, ticker: str) -> pd.DataFrame:
+        """Consensus EPS now vs 7/30/60/90 days ago (rows 0q, +1q, 0y, +1y). Vendor estimates."""
+        def fetch():
+            try:
+                df = self._ticker(ticker).eps_trend
+            except Exception as exc:
+                log.info("eps trend unavailable for %s: %s", ticker, exc)
+                return pd.DataFrame()
+            return df if df is not None else pd.DataFrame()
+
+        return self._cached("eps_trend", to_yahoo_symbol(ticker), self.ttl_info, fetch)
+
+    def get_prices_batch(self, tickers: list[str], period: str = "2y", interval: str = "1d",
+                         chunk: int = 60) -> dict[str, pd.DataFrame]:
+        """Bars for many tickers in a few batched requests (raw Close, Adj Close, Stock Splits).
+        Returns {ticker: frame}; tickers with no data are omitted (the caller records them as unavailable)."""
+        import yfinance as yf
+
+        out: dict[str, pd.DataFrame] = {}
+        todo = []
+        for t in tickers:
+            hit = self.cache.get("prices_batch", f"{to_yahoo_symbol(t)}:{period}:{interval}", self.ttl_prices)
+            if hit is not None:
+                out[t] = hit[0]
+            else:
+                todo.append(t)
+        for i in range(0, len(todo), chunk):
+            part = todo[i:i + chunk]
+            syms = [to_yahoo_symbol(t) for t in part]
+            try:
+                df = self._call(f"download({len(part)} tickers)", lambda syms=syms: yf.download(
+                    syms, period=period, interval=interval, auto_adjust=False, actions=True, group_by="ticker",
+                    progress=False, threads=True, timeout=30))
+            except ProviderError as exc:
+                log.warning("batch download failed: %s", exc)
+                continue
+            if df is None or df.empty:
+                continue
+            for t, sym in zip(part, syms, strict=True):
+                try:
+                    sub = df[sym] if isinstance(df.columns, pd.MultiIndex) else df
+                except KeyError:
+                    continue
+                sub = sub.dropna(subset=["Close"]).copy()
+                if sub.empty:
+                    continue
+                sub.index = pd.to_datetime(sub.index)
+                if sub.index.tz is not None:
+                    sub.index = sub.index.tz_localize(None)
+                sub = sub[~sub.index.duplicated(keep="last")].sort_index()
+                out[t] = sub
+                self.cache.set("prices_batch", f"{sym}:{period}:{interval}", sub)
+        return out

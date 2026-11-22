@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useApi } from "@/hooks/useApi";
 import { ago, dt, pct } from "@/lib/format";
 import { Badge, Card, Empty, Loading, RecBadge, Status } from "@/components/ui";
+import { LabelDistribution, PillarBar, PILLARS } from "@/components/Rulebook";
 
 export default function Overview() {
   const runs = useApi<any>("/analysis?limit=8");
@@ -13,6 +14,12 @@ export default function Overview() {
   const pf = useApi<any>("/portfolio");
   const sources = useApi<any>("/data-sources");
   const settings = useApi<any>("/settings");
+  const screen = useApi<any>("/screener");
+  const labelled = (screen.data?.rows || []).filter((r: any) => r.label);
+  const ideas = labelled.filter((r: any) => r.label === "Strong Buy" || r.label === "Buy")
+    .sort((a: any, b: any) => b.composite - a.composite).slice(0, 8);
+  const nearBuy = labelled.filter((r: any) => r.label === "Wait" && r.price && r.buy_below && r.price <= r.buy_below * 1.08)
+    .sort((a: any, b: any) => a.price / a.buy_below - b.price / b.buy_below).slice(0, 5);
   const recent = runs.data?.analyses || [];
   const atRisk = (theses.data?.theses || []).filter((t: any) => t.overall_status !== "Valid");
   const upcoming = (watch.data?.items || []).filter((w: any) => w.next_event);
@@ -36,6 +43,29 @@ export default function Overview() {
         <div className="card stat"><span className="label">Saved analyses</span><span className="value">{runs.data ? recent.length : "…"}</span></div>
         <div className="card stat"><span className="label">Active theses needing review</span><span className="value">{theses.data ? atRisk.length : "…"}</span></div>
         <div className="card stat"><span className="label">Unread alerts</span><span className="value">{alerts.data ? alerts.data.alerts.length : "…"}</span></div>
+      </div>
+      <div className="grid g2 mb">
+        <Card title="S&P 500 by rulebook label" sub={screen.data?.screen_run?.completed_at ? `screened ${ago(screen.data.screen_run.completed_at)}` : undefined}
+          actions={<Link href="/screener" className="small">Screener →</Link>}>
+          {screen.loading && <Loading />}
+          {screen.data && <LabelDistribution counts={screen.data.label_counts || {}} onPick={(l) => { if (l) window.location.href = `/screener`; }} />}
+          <p className="xs faint mt-s">Labels from the team rulebook. Strong Buy and Buy need high sector-relative scores on all four pillars and a price at or under fair value, so they are deliberately rare.</p>
+        </Card>
+        <Card title="Top ideas" sub="Strong Buy / Buy, highest composite first" actions={<Link href="/screener" className="small">All →</Link>}>
+          {screen.data && !ideas.length && <p className="muted small">No constituent currently meets the Buy rules{labelled.length ? "" : " (no screen yet)"}.</p>}
+          {ideas.map((r: any) => (
+            <div key={r.symbol} className="idea">
+              <Link href={`/analyze?ticker=${r.symbol}`} className="mono"><strong>{r.symbol}</strong></Link>
+              <div><div className="small">{r.name}</div>
+                <span className="minis">{PILLARS.map((p) => <PillarBar key={p.key} score={r.pillars?.[p.key]} label={p.label} compact />)}</span></div>
+              <div className="r"><RecBadge rec={r.label} /><div className="num xs faint">{Math.round(r.composite)} · ${r.price?.toFixed(0)} / fair ${r.fair_value?.toFixed(0)}</div></div>
+            </div>))}
+          {nearBuy.length > 0 && <>
+            <div className="section-title mt">Wait: price at, below or within 8% of buy-below</div>
+            {nearBuy.map((r: any) => <div key={r.symbol} className="row between small claim"><span><strong className="mono">{r.symbol}</strong> {r.name}</span>
+              <span className="num">${r.price.toFixed(2)} <span className="faint">vs buy-below</span> ${r.buy_below.toFixed(2)}</span></div>)}
+          </>}
+        </Card>
       </div>
       <div className="grid g2">
         <Card title="Recent decisions" actions={<Link href="/history" className="small">All history →</Link>}>

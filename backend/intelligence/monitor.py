@@ -56,6 +56,12 @@ def current_values(providers, ticker: str, cik: int | None) -> dict[str, Any]:
         out["latest_period"] = rev.fiscal_period if rev else None
     except Exception as exc:
         out["errors"].append(f"financials: {exc}")
+    try:
+        from backend.analysis.factors import eps_revision
+
+        out["eps_rev_60d"] = eps_revision(md.get_eps_trend(ticker), "60daysAgo")
+    except Exception as exc:
+        out["errors"].append(f"estimates: {exc}")
     if cik:
         try:
             out["filings"] = providers.sec.recent_filings(cik, forms=("8-K", "8-K/A", "10-Q", "10-K"), limit=30)
@@ -108,6 +114,9 @@ def check_thesis(db, providers, thesis: M.InvestmentThesis, fresh: dict[str, Any
         if a.metric_key == "dist_sma_200":
             cur = (fresh.get("technicals") or {}).get("dist_sma_200")
             evidence = f"price {fresh.get('price')} on {fresh.get('price_date')}"
+        elif a.metric_key == "eps_rev_60d":
+            cur = fresh.get("eps_rev_60d")
+            evidence = "consensus EPS (this and next fiscal year) vs 60 days ago, Yahoo Finance"
         else:
             m = latest_metric(fresh.get("all_metrics", []), a.metric_key) if fresh.get("all_metrics") else None
             if m is not None and m.ok:
@@ -185,7 +194,8 @@ def check_thesis(db, providers, thesis: M.InvestmentThesis, fresh: dict[str, Any
     return {"events": events, "material": material, "reasons": reasons, "errors": fresh.get("errors", [])}
 
 
-AGENT_FOR_METRIC = {"dist_sma_200": "technical", "net_debt_to_ebitda": "risk_portfolio"}
+AGENT_FOR_METRIC = {"dist_sma_200": "technical", "net_debt_to_ebitda": "risk_portfolio", "eps_rev_60d": "news",
+                    "trailing_pe": "valuation"}
 
 
 def reassessment_focus(events: list[M.ThesisEvent]) -> list[dict[str, Any]]:

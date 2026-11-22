@@ -82,8 +82,33 @@ def financial_chart_series(fd) -> dict[str, Any]:
     return out
 
 
+def rulebook_stage(providers, res: IngestionResult, dq: DataQualityReport, factor_peers: list[dict[str, Any]] | None,
+                   emit) -> tuple[dict[str, Any], dict[str, Any], float | None]:
+    """Team rulebook: raw factors for the subject, ranked against the screened S&P 500 (same formulas)."""
+    from backend.services import rulebook_service as RB
+
+    ident = res.identity
+    emit("rulebook", "started", "Applying the team rulebook: quality, value, momentum and revisions pillars, gates, "
+         "fair value and buy-below price")
+    raw = RB.factor_raw(providers, ident.ticker, ident.sector, ident.cik, info=res.info, daily=res.prices,
+                        filings=res.filings)
+    bench_vol = None
+    if res.benchmark_prices is not None and len(res.benchmark_prices) > 60:
+        r = res.benchmark_prices["Close"].pct_change().dropna().iloc[-252:]
+        bench_vol = float(r.std() * (252 ** 0.5))
+    peers = factor_peers or []
+    prelim = RB.assess_subject(raw, peers, dq.status, llm_used=False, bench_vol=bench_vol)
+    basis = "S&P 500 sector peers from the latest universe screen" if peers else \
+        "absolute anchors (run a universe screen for sector percentiles)"
+    emit("rulebook", "completed", f"Rulebook (before committee): {prelim['label']}, composite {prelim['composite']:.0f}; "
+         + ", ".join(f"{k} {v['score']:.0f}" for k, v in prelim["pillars"].items()) + f"; ranked against {basis}",
+         detail={"label": prelim["label"], "composite": prelim["composite"], "peers": len(peers)})
+    return raw, prelim, bench_vol
+
+
 def run_compute(providers, res: IngestionResult, dq: DataQualityReport, params: dict[str, Any],
-                universe: list[dict[str, Any]], snapshot_infos: dict[str, dict[str, Any]], emit) -> dict[str, Any]:
+                universe: list[dict[str, Any]], snapshot_infos: dict[str, dict[str, Any]], emit,
+                factor_peers: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     fd = res.financials
     emit("calculate_metrics", "started", "Calculating financial ratios, growth, cash flow and valuation metrics")
     metrics = FundamentalCalculator(fd).compute() if fd else []
@@ -165,9 +190,14 @@ def run_compute(providers, res: IngestionResult, dq: DataQualityReport, params: 
                  "fallback_rule": "Per metric, the narrowest level with enough valid values is used "
                                   f"(minimums {thresholds()['peer_group']['min_valid_by_level']})."}
     pack = build_pack(res, dq, metrics, assessments, tech, risk, peer_info, snap, scen, pf)
+    rb_raw, rb, bench_vol = rulebook_stage(providers, res, dq, factor_peers, emit)
+    from backend.services.rulebook_service import add_evidence
+
+    add_evidence(pack, rb)
     emit("evidence", "completed", f"Evidence pack built: {len(pack.items)} items with provenance")
     return {"metrics": metrics, "snapshot": snap, "assessments": assessments, "profile": profile, "peer": peer_info,
             "scores": {"fundamental_quality": fq, "valuation": vs, "technical": tscore, "risk": rscore},
             "technicals": tech, "risk": risk, "scenarios": scen, "portfolio": pf, "pack": pack,
+            "rulebook": rb, "rulebook_raw": rb_raw, "bench_vol": bench_vol,
             "charts": {"price": chart, "financials": financial_chart_series(fd),
                        "valuation_history": [m.model_dump(mode="json") for m in metrics if m.key == "pe_historical"]}}

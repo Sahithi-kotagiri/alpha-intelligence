@@ -71,6 +71,11 @@ class AgentContext:
     prior: dict[str, Any] | None = None
     data_through: dict[str, Any] = field(default_factory=dict)
     model_runs: list[dict[str, Any]] = field(default_factory=list)
+    rulebook: dict[str, Any] = field(default_factory=dict)       # preliminary rulebook verdict (compute stage)
+    rulebook_raw: dict[str, Any] = field(default_factory=dict)
+    factor_peers: list[dict[str, Any]] = field(default_factory=list)
+    bench_vol: float | None = None
+    research_log: list[dict[str, Any]] = field(default_factory=list)
 
     def assessment(self, key: str) -> Assessment | None:
         return next((a for a in self.assessments if a.metric_key == key), None)
@@ -131,10 +136,46 @@ class BaseAgent:
         return ("\n\nTHESIS REASSESSMENT: monitoring detected these material changes since the previous decision. Address each "
                 "explicitly: is it temporary or structural, how reliable is the evidence, and does it weaken the thesis?\n" + lines)
 
+    def plan_research(self, ctx: AgentContext, llm: LLMClient, items: list[EvidenceItem], emit: Emit) -> list[EvidenceItem]:
+        """Planning step: the agent reads an index of its evidence and chooses what to examine first.
+        Returns the items reordered (focus first). Logged in ctx.research_log; on failure the order is unchanged."""
+        from backend.app.config import get_settings
+        from backend.schemas.agents import ResearchPlan
+
+        if not get_settings().llm_research_planning or len(items) < 40:
+            return items
+        allowed = {i.id for i in items}
+        index = "\n".join(f"[{i.id}] {i.title}" for i in items)
+        system = (load_prompt("common")[0] + "\n\n" + load_prompt(self.prompt_name)[0] + "\n\n"
+                  + load_prompt("research_plan")[0])
+        user = (f"Company: {ctx.company_name} ({ctx.ticker}); horizon {ctx.params.get('horizon')}.{self.focus_text(ctx)}\n\n"
+                f"Evidence index ({len(items)} items):\n{index}")
+        try:
+            res = llm.structured(system, user, ResearchPlan, 4000)
+        except LLMError as exc:
+            ctx.research_log.append({"agent": self.name, "status": "failed", "error": str(exc)})
+            return items
+        plan = res.parsed.model_dump() if hasattr(res.parsed, "model_dump") else dict(res.parsed)
+        focus = [e for e in plan.get("focus_evidence_ids", []) if e in allowed][:25]
+        ctx.research_log.append({"agent": self.name, "status": "ok", "focus_evidence_ids": focus,
+                                 "rejected_ids": [e for e in plan.get("focus_evidence_ids", []) if e not in allowed],
+                                 "open_questions": plan.get("open_questions", [])[:8], "rationale": plan.get("rationale", "")})
+        ctx.model_runs.append(self._run_meta(res, load_prompt("research_plan")[1], load_prompt("research_plan")[2], "ok", []))
+        emit("agent", "planning", f"{self.title}: chose {len(focus)} evidence items to examine first", agent=self.name,
+             detail={"focus": focus[:10], "questions": plan.get("open_questions", [])[:3]})
+        rank = {e: n for n, e in enumerate(focus)}
+        return sorted(items, key=lambda i: rank.get(i.id, len(rank)))
+
     def build_user_prompt(self, ctx: AgentContext, items: list[EvidenceItem], det: dict[str, Any]) -> str:
+        plan = next((p for p in reversed(ctx.research_log) if p.get("agent") == self.name and p.get("status") == "ok"), None)
+        plan_txt = ""
+        if plan:
+            plan_txt = (f"\n\nYour research plan: examine first {plan['focus_evidence_ids']}; answer: "
+                        f"{plan['open_questions']}.")
         return (f"Company: {ctx.company_name} ({ctx.ticker}). Investment horizon: {ctx.params.get('horizon')}. "
                 f"Benchmark: {ctx.params.get('benchmark')}.\nData through: {json.dumps(ctx.data_through, default=str)}\n\n"
-                f"Deterministic context (computed by tested Python rules):\n{self.context_text(ctx, det)}{self.focus_text(ctx)}\n\n"
+                f"Deterministic context (computed by tested Python rules):\n{self.context_text(ctx, det)}{self.focus_text(ctx)}"
+                f"{plan_txt}\n\n"
                 f"Evidence you may cite ({len(items)} items):\n{render_for_prompt(items)}")
 
     def run(self, ctx: AgentContext, llm: LLMClient | None, emit: Emit) -> AgentReportOut:
@@ -165,6 +206,7 @@ class BaseAgent:
         system_common, v_common, sha_common = load_prompt("common")
         system_role, v_role, sha_role = load_prompt(self.prompt_name)
         system = f"{system_common}\n\n{system_role}"
+        items = self.plan_research(ctx, llm, items, emit)
         user = self.build_user_prompt(ctx, items, det)
         guard = GuardrailReport()
         try:
@@ -174,7 +216,7 @@ class BaseAgent:
                 guard.retried = True
                 fix = (f"\n\nYour previous answer cited evidence IDs that do not exist in the evidence list: {bad[:20]}. "
                        "Answer again citing only IDs from the list above.")
-                res2 = llm.structured(system, user + fix, self.schema, self.max_tokens)
+                res2 = llm.structured(system, user, self.schema, self.max_tokens, followup=fix)
                 ctx.model_runs.append(self._run_meta(res, v_role, sha_role, "retried", bad))
                 res = res2
                 bad = invalid_citations(res.parsed, allowed)
@@ -210,7 +252,8 @@ class BaseAgent:
         return {"agent": self.name, "provider": res.provider, "model": res.model, "prompt_name": self.prompt_name,
                 "prompt_version": version, "prompt_sha256": sha, "input_tokens": res.input_tokens,
                 "output_tokens": res.output_tokens, "latency_ms": res.latency_ms, "status": status,
-                "stop_reason": res.stop_reason, "guardrail_violations": bad}
+                "stop_reason": res.stop_reason, "guardrail_violations": bad,
+                "cache_read_tokens": res.cache_read_tokens, "cache_write_tokens": res.cache_write_tokens}
 
     def answer_review(self, ctx: AgentContext, question: str, llm: LLMClient | None, emit: Emit) -> dict[str, Any]:
         """Bounded committee clarification. Deterministic mode returns the relevant rule evidence."""

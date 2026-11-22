@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     claude_api_base_url: str = "https://api.anthropic.com"  # env CLAUDE_API_BASE_URL (deliberately not ANTHROPIC_BASE_URL)
     llm_model: str = "claude-opus-5-5"
     llm_effort: str = "high"
+    llm_research_planning: bool = True   # each analyst first chooses which evidence to examine (one extra short call)
     llm_max_tokens: int = 16000
     llm_timeout_seconds: float = 300.0
     llm_server_fallback: bool = True

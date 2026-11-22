@@ -31,6 +31,13 @@ def make_responder(chosen="Watchlist", override="", bad_ids=False, raise_for=(),
                     "moat_sources": [{"source": "switching_costs", "assessment": "Stable margins", "evidence_ids": ids}],
                     "management_capital_allocation": [c], "competitor_context": [c], "key_assumptions": ["Growth persists"],
                     "missing_information": ["Segment data"], "confidence": "Medium", "confidence_reason": "Adequate data."}
+        if n == "ResearchPlan":
+            return {"focus_evidence_ids": ids + ["not.a.real.id"], "open_questions": ["Is growth durable?"],
+                    "rationale": "Start with the rulebook pillars."}
+        if n == "ValuationNarrative":
+            return {"executive_assessment": "Price close to fair value.", "fair_value_view": c, "market_expectations": c,
+                    "pe_history_view": c, "key_sensitivities": [c], "margin_of_safety_view": c, "missing_information": [],
+                    "confidence": "Medium", "confidence_reason": "ok"}
         if n == "TechnicalNarrative":
             return {k: c for k in ("trend_summary", "momentum_assessment", "relative_strength_assessment", "volume_assessment",
                                    "breakout_assessment", "entry_zone_rationale", "invalidation_condition")} | {
@@ -55,12 +62,14 @@ def make_responder(chosen="Watchlist", override="", bad_ids=False, raise_for=(),
                                     "verify_before_deciding": "Guidance"}],
                     "weak_assumptions": [c], "overlooked_evidence": [], "invalidation_conditions": ["Revenue growth < 5%"],
                     "thesis_failure": {"definition": "Underperform by 15%", "horizon": "12 months", "low_pct": 20, "high_pct": 45,
-                                       "basis": "Uncalibrated expert judgement"}, "bear_case_conclusion": "Some risk."}
+                                       "basis": "Uncalibrated expert judgement"},
+                    "market_belief": "The price implies modest growth.", "our_difference": "", "difference_credible": False,
+                    "difference_evidence_ids": [], "bear_case_conclusion": "Some risk."}
         if n == "CommitteeNarrative":
             return {"agreements": [c], "disagreements": [], "evidence_adjudication": [c], "unresolved_questions": [],
                     "review_questions": [{"target_agent": "fundamental", "question": "Is growth durable?"}] if always_ask else [],
                     "chosen_recommendation": chosen, "override_reason": override, "rationale": "Evidence-weighted.",
-                    "why_not_alternatives": ["Buy Now: not justified."], "limitations": []}
+                    "why_not_alternatives": ["Buy: not justified."], "limitations": []}
         if n == "ReviewAnswer":
             return {"answer": "Growth supported by cited revenue trend.", "evidence_ids": ids, "resolved": True,
                     "cannot_resolve_reason": ""}
@@ -98,13 +107,19 @@ def test_full_graph_with_fake_llm(providers):
     assert st["reports"]["news"].score is not None  # news classified -> scored
     assert any(t["kind"] == "qualitative" for t in st["thesis"])
     assert st["ctx"].model_runs and all(m.get("prompt_sha256") for m in st["ctx"].model_runs if m["status"] == "ok")
+    # research planning: each analyst chose evidence first; invented IDs are rejected, not used
+    plans = [p for p in st["ctx"].research_log if p["status"] == "ok"]
+    assert {p["agent"] for p in plans} >= {"fundamental", "valuation", "technical", "risk_portfolio"}  # news: < 40 items, skipped
+    assert all("not.a.real.id" in p["rejected_ids"] and "not.a.real.id" not in p["focus_evidence_ids"] for p in plans)
 
 
 def test_deterministic_mode_is_labelled(providers):
     st, events = run_graph(providers, None)
     for r in st["reports"].values():
         assert r.mode == "deterministic" and r.summary.startswith("[Rule-based report")
-    assert st["reports"]["news"].score is None
+    # rule-based News & Estimates scores only the deterministic revisions pillar (no keyword sentiment)
+    assert "revisions pillar" in st["reports"]["news"].score["explanation"]
+    assert not st["reports"]["news"].deterministic.get("classifications")
     assert any("no LLM" in e for e in st["final"]["confidence_explanation"]) or \
         any("rule-based only" in e for e in st["final"]["confidence_explanation"])
 
@@ -127,12 +142,12 @@ def test_llm_failure_falls_back_honestly(providers):
 
 
 def test_committee_cannot_choose_gated_recommendation(providers):
-    providers.market.cos["TSTA"].info_overrides["quoteType"] = "ETF"  # => data quality critical => Buy Now blocked
-    llm = FakeLLM(make_responder(chosen="Buy Now", override="I like it"))
+    providers.market.cos["TSTA"].info_overrides["quoteType"] = "ETF"  # => data quality critical => buys blocked
+    llm = FakeLLM(make_responder(chosen="Strong Buy", override="I like it"))
     st, _ = run_graph(providers, llm)
-    assert "Buy Now" not in st["committee"]["allowed"]
-    assert st["final"]["recommendation"] != "Buy Now"
-    assert any("blocked" in x for x in st["committee"]["limitations"])
+    assert "Strong Buy" not in st["committee"]["allowed"] and "Buy" not in st["committee"]["allowed"]
+    assert st["final"]["recommendation"] not in ("Strong Buy", "Buy")
+    assert any("rulebook label" in x for x in st["committee"]["limitations"])
 
 
 def test_override_without_reason_is_discarded(providers):
@@ -213,9 +228,13 @@ def test_anthropic_adapter_request_shape(monkeypatch):
 
     s = Settings(_env_file=None, llm_provider="anthropic", anthropic_api_key="sk-test")
     client = AnthropicClient(s, http_client=anthropic.DefaultHttpxClient(transport=httpx2.MockTransport(handler)))
-    res = client.structured("system text", "user text", Out)
+    res = client.structured("system text", "user text", Out, followup="fix your citations")
     assert res.parsed.answer == "ok" and res.input_tokens == 12
     b = captured["body"]
+    # prompt caching: system and the evidence prompt are cache breakpoints; the corrective follow-up is not
+    assert b["system"] == [{"type": "text", "text": "system text", "cache_control": {"type": "ephemeral"}}]
+    assert b["messages"][0]["content"] == [{"type": "text", "text": "user text", "cache_control": {"type": "ephemeral"}},
+                                           {"type": "text", "text": "fix your citations"}]
     assert captured["url"].startswith("https://api.anthropic.com/")
     assert b["model"] == "claude-opus-5-5" and b["thinking"] == {"type": "adaptive"}
     assert b["output_config"]["effort"] == "high" and b["output_config"]["format"]["type"] == "json_schema"

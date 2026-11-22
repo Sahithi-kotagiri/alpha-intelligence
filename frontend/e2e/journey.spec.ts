@@ -9,6 +9,19 @@ test("search, confirm, run, inspect evidence, ask", async ({ page }) => {
   await expect(page).toHaveURL(/analysis\//);
   await expect(page.locator(".decision-head")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText(/Rule-based mode/)).toBeVisible();
+  // rulebook verdict: four pillars with keyboard-accessible drill-down into the measures
+  await expect(page.getByRole("heading", { name: "Rulebook verdict" })).toBeVisible();
+  for (const p of ["Quality", "Value", "Momentum", "Revisions"]) await expect(page.getByRole("meter", { name: new RegExp(`^${p} \\d+ of 100`) })).toBeVisible();
+  const quality = page.locator(".pillar-head").filter({ hasText: "Quality" });
+  await quality.focus();
+  await page.keyboard.press("Enter");
+  await expect(quality).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator("#pm-quality").getByText(/ROIC, 5-year average/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What would change the call" })).toBeVisible();
+  // valuation analyst tab
+  await page.getByRole("tab", { name: "Valuation" }).click();
+  await expect(page.getByText("What the price implies")).toBeVisible();
+  await page.getByRole("tab", { name: "Decision" }).click();
   // research log shows real backend events
   await page.getByText(/Research log/).click();
   await expect(page.getByText("Analysis complete", { exact: false })).toBeVisible();
@@ -77,9 +90,22 @@ test("microphone denial falls back to typing", async ({ page, context }) => {
   await expect(page.locator(".callout.pos").first()).toBeVisible();
 });
 
-test("screener lists the universe; mobile has no horizontal overflow", async ({ page }) => {
+test("screener classifies the universe with drill-down; mobile has no horizontal overflow", async ({ page }) => {
   await page.goto("/screener");
   await expect(page.getByText("TSTA").first()).toBeVisible();
+  await page.getByRole("button", { name: "Refresh universe" }).click();
+  const firstLabel = page.locator("tbody tr .badge.rec").first();
+  await expect(firstLabel).toBeVisible({ timeout: 60_000 });
+  await page.reload();
+  // label distribution segments filter the table
+  const chip = page.locator(".chip").filter({ hasText: /Watchlist|Reject|Wait|Buy/ }).first();
+  const chipLabel = (await chip.innerText()).replace(/\s*\d+$/, "").trim();
+  await chip.click();
+  await expect(page.locator("tbody tr .badge.rec").first()).toHaveText(chipLabel);
+  // row drill-down shows the pillar measures and the decision trace
+  await page.locator("tbody tr.clickable").first().click();
+  await expect(page.getByRole("link", { name: "Run full analysis" })).toBeVisible();
+  await expect(page.locator(".drawer-row .pillar-head").first()).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

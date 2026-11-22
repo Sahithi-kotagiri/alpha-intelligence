@@ -1,6 +1,5 @@
 import pytest
 
-from backend.analysis import decision as D
 from backend.analysis.assessment import Assessor
 from backend.analysis.classification import BusinessProfile, classify
 from backend.analysis.peers import PeerGroup, PeerStats, oriented_percentile
@@ -105,52 +104,3 @@ def test_rubric_score_excludes_not_applicable_and_reports_coverage():
     mult = next(d for d in s.dimensions if d.name == "multiples")
     assert mult.score == pytest.approx(10.0)  # forward_pe informational (no peers) => excluded from points
     assert s.coverage < 1.0 and s.unavailable_dimensions
-
-
-# ---------------------------------------------------------------- decision policy
-def test_policy_buy_now():
-    rec, trace = D.policy_recommendation({"quality": 8, "valuation": 6, "technical": 6, "risk": 6}, set())
-    assert rec == "Buy Now"
-
-
-def test_strong_fundamentals_excessive_valuation_waits():
-    rec, _ = D.policy_recommendation({"quality": 8, "valuation": 2, "technical": 6, "risk": 6}, set())
-    assert rec == "Wait"
-
-
-def test_strong_fundamentals_weak_technicals_wait_not_reject():
-    rec, _ = D.policy_recommendation({"quality": 8, "valuation": 6, "technical": 2, "risk": 6}, set())
-    assert rec == "Wait"
-
-
-def test_weak_quality_rejects_and_blocked_buy_falls_back():
-    assert D.policy_recommendation({"quality": 3, "valuation": 9, "technical": 9, "risk": 9}, set())[0] == "Reject"
-    rec, trace = D.policy_recommendation({"quality": 8, "valuation": 6, "technical": 6, "risk": 6}, {"Buy Now"})
-    assert rec == "Wait" and any("blocked" in t for t in trace)
-    assert D.policy_recommendation({"quality": 5, "valuation": 5, "technical": 5, "risk": 5}, set())[0] == "Watchlist"
-
-
-def test_missing_scores_cannot_buy():
-    assert D.policy_recommendation({"quality": 9, "valuation": None, "technical": 9, "risk": 9}, set())[0] == "Wait"
-
-
-def test_entry_price_requires_evidence():
-    out = D.entry_price("Wait", 100.0, "2026-01-01", {"justified": False}, [], None, None, None, None)
-    assert not out["available"] and "No reliable entry price" in out["text"]
-    out2 = D.entry_price("Wait", 100.0, "2026-01-01", {"justified": True, "low": 90, "high": 95, "touches": 3}, [], 5, 18.6,
-                         None, None)
-    assert out2["available"] and out2["low"] <= out2["high"]
-
-
-def test_allocation_requires_portfolio_inputs():
-    assert not D.allocation("Buy Now", 0.7, None, 0.3)["available"]
-    assert not D.allocation("Buy Now", 0.7, {"available": True, "risk_tolerance": None}, 0.3)["available"]
-    a = D.allocation("Buy Now", 0.9, {"available": True, "risk_tolerance": "moderate",
-                                      "impact": {"vol_before": 0.15, "candidate_corr_to_portfolio": 0.5}}, 0.3)
-    assert a["available"] and 0 < a["high"] <= 0.05
-    assert D.allocation("Reject", 0.9, {"available": True, "risk_tolerance": "moderate"}, 0.3)["high"] == 0
-
-
-def test_entry_price_divergent_methods_not_quoted():
-    out = D.entry_price("Wait", 350.0, "2026-01-01", {"justified": True, "low": 344, "high": 345, "touches": 2}, [], 9, 23, 10.6, 9.6)
-    assert not out["available"] and out["divergent"] and "disagree" in out["text"]

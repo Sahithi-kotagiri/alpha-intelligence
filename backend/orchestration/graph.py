@@ -24,14 +24,15 @@ from backend.agents.llm import LLMClient
 from backend.agents.news import NewsAnalyst
 from backend.agents.risk_portfolio import RiskPortfolioAnalyst
 from backend.agents.technical import TechnicalAnalyst
+from backend.agents.valuation import ValuationAnalyst
 from backend.analysis.config_loader import policy
 from backend.data.ingestion import CompanyIdentity, ingest_company
 from backend.data.validation import validate
 from backend.intelligence.thesis import extract
 from backend.orchestration.compute import run_compute
 
-PRIMARY = {"fundamental": FundamentalAnalyst(), "technical": TechnicalAnalyst(), "news": NewsAnalyst(),
-           "risk_portfolio": RiskPortfolioAnalyst()}
+PRIMARY = {"fundamental": FundamentalAnalyst(), "valuation": ValuationAnalyst(), "technical": TechnicalAnalyst(),
+           "news": NewsAnalyst(), "risk_portfolio": RiskPortfolioAnalyst()}
 DEVIL = DevilsAdvocate()
 
 
@@ -57,7 +58,7 @@ class State(TypedDict, total=False):
 
 
 def build_graph(providers, llm: LLMClient | None, emit, universe: list[dict[str, Any]],
-                snapshot_infos: dict[str, dict[str, Any]]):
+                snapshot_infos: dict[str, dict[str, Any]], factor_peers: list[dict[str, Any]] | None = None):
     def ev(stage, status, message, agent=None, detail=None):
         emit(stage, status, message, agent=agent, detail=detail)
 
@@ -75,7 +76,7 @@ def build_graph(providers, llm: LLMClient | None, emit, universe: list[dict[str,
 
     def n_compute(s: State) -> State:
         res, dq = s["ingestion"], s["dq"]
-        comp = run_compute(providers, res, dq, s["params"], universe, snapshot_infos, ev)
+        comp = run_compute(providers, res, dq, s["params"], universe, snapshot_infos, ev, factor_peers)
         fd = res.financials
         snap = comp["snapshot"]
         rev = (fd.latest("revenue", "quarterly") or fd.latest("revenue", "annual")) if fd else None
@@ -85,6 +86,8 @@ def build_graph(providers, llm: LLMClient | None, emit, universe: list[dict[str,
             profile=comp["profile"].model_dump() | {"sector": res.identity.sector, "sub_industry": res.identity.sub_industry},
             peer=comp["peer"], scores=comp["scores"], technicals=comp["technicals"], risk=comp["risk"],
             scenarios=comp["scenarios"], portfolio=comp["portfolio"], prior=s["params"].get("prior"),
+            rulebook=comp["rulebook"], rulebook_raw=comp["rulebook_raw"], factor_peers=factor_peers or [],
+            bench_vol=comp["bench_vol"],
             data_through={"prices": str(snap.price_date) if snap.price_date else None, "price": snap.price,
                           "financials": f"{rev.fiscal_period} (period end {rev.period_end})" if rev else None,
                           "currency": res.info.get("financialCurrency") or res.identity.currency,
@@ -92,7 +95,7 @@ def build_graph(providers, llm: LLMClient | None, emit, universe: list[dict[str,
                           "analysis_date": date.today().isoformat()})
         for name, agent in PRIMARY.items():
             ev("agent", "queued", f"{agent.title}: queued", agent=name)
-        ev("agent", "queued", f"{DEVIL.title}: queued (runs after the four primary analysts)", agent=DEVIL.name)
+        ev("agent", "queued", f"{DEVIL.title}: queued (runs after the {len(PRIMARY)} primary analysts)", agent=DEVIL.name)
         return {"computed": comp, "ctx": ctx}
 
     def make_agent_node(name):
@@ -150,7 +153,7 @@ def build_graph(providers, llm: LLMClient | None, emit, universe: list[dict[str,
             moat = {"rating": fund.narrative.get("moat_rating"),
                     "evidence_ids": [e for m in fund.narrative.get("moat_sources", []) for e in m.get("evidence_ids", [])]}
         qual = s["final"]["monitoring_plan"].get("qualitative_assumptions") or []
-        th = extract(ctx.assessments, ctx.technicals, qual, moat)
+        th = extract(ctx.assessments, ctx.technicals, qual, moat, s["final"].get("rulebook") | {"detail": ctx.rulebook.get("detail", {})})
         ev("thesis", "completed", f"{len(th)} monitorable thesis assumptions extracted")
         return {"thesis": th}
 

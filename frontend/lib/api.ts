@@ -42,7 +42,7 @@ export async function api<T = any>(path: string, init: RequestInit & { json?: un
   return (ct.includes("application/json") ? res.json() : (res.blob() as any)) as Promise<T>;
 }
 
-export type Rec = "Buy Now" | "Wait" | "Watchlist" | "Reject";
+export type Rec = "Strong Buy" | "Buy" | "Wait" | "Watchlist" | "Reject";
 
 export interface RunSummary {
   id: string;
